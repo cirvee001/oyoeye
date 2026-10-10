@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "oyoeye",
+      "runtimeExecutable": "/Users/apple/.local/node/bin/node",
+      "runtimeArgs": [
+        "node_modules/vite/bin/vite.js"
+      ],
+      "port": 5190,
+      "cwd": "/Users/apple/Downloads/oyo/oyoeye",
+      "autoPort": true
+    }
+  ]
+}
