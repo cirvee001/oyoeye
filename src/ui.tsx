@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { MIN, clockState, dur, isOpen, isOverdue, pendingHandoff } from './platform/engine';
 import type { CategoryId, Incident, Severity } from './platform/types';
 import { STATUS_COLOR, STATUS_ORDER, STATUS_TONE, statusLabel, tr, type Lang } from './i18n';
-import { agency, cat, dep, handoffTarget, holderLabel, levelLabel, lgaOf, now, stepOf, subLabel } from './store';
+import { agency, cat, dep, handoffTarget, holderLabel, levelLabel, lgaOf, now, persona, stepOf, subLabel, useStore } from './store';
+import { ALERT_FLASH_MS, alertsFor } from './alerts';
 import { readPhoto } from './photo';
 import {
-  ArrowRightLeft, Bell, Building2, Download, KeyRound, Megaphone, MessageCircle, Paperclip, Pin, SendHorizontal, Upload, CalendarClock, Camera, ChartColumn, Check, ChevronDown, ChevronLeft, ChevronRight, CircleCheck, CircleHelp, Clock as ClockIcon, Construction, Ellipsis, FileText, Flame, House, Inbox as InboxIcon, LayoutDashboard, ListChecks, ListFilter, LogOut, MapPin, Menu, Mic, PhoneCall, Plus, Route, ScrollText, Search, Shield, Siren, Timer, Trash2, TriangleAlert, User, Users, Waves, X, Zap, type LucideIcon,
+  ArrowRightLeft, Bell, LocateFixed, Navigation, Volume2, VolumeX, Maximize2, Layers, Building2, Download, KeyRound, Megaphone, MessageCircle, Paperclip, Pin, SendHorizontal, Upload, CalendarClock, Camera, ChartColumn, Check, ChevronDown, ChevronLeft, ChevronRight, CircleCheck, CircleHelp, Clock as ClockIcon, Construction, Ellipsis, FileText, Flame, House, Inbox as InboxIcon, LayoutDashboard, ListChecks, ListFilter, LogOut, MapPin, Menu, Mic, PhoneCall, Plus, Route, ScrollText, Search, Shield, Siren, Timer, Trash2, TriangleAlert, User, Users, Waves, X, Zap, type LucideIcon,
 } from 'lucide-react';
 
 export function useNow(ms = 15_000) {
@@ -20,12 +21,12 @@ export function useNow(ms = 15_000) {
 export const go = (path: string) => (location.hash = path);
 export const hhmm = (t?: number) => (t ? new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—');
 export const dayTime = (t: number) => new Date(t).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-export const ago = (t: number, at = now()) => {
+export const ago = (t: number, at = now(), lang: Lang = 'en') => {
   const m = Math.round((at - t) / MIN);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  if (m < 1440) return `${Math.floor(m / 60)}h ${m % 60}m ago`;
-  return `${Math.floor(m / 1440)}d ago`;
+  if (m < 1) return tr('ago.now', lang);
+  if (m < 60) return tr('ago.m', lang, { m });
+  if (m < 1440) return tr('ago.h', lang, { h: Math.floor(m / 60), m: m % 60 });
+  return tr('ago.d', lang, { d: Math.floor(m / 1440) });
 };
 export const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : '—');
 
@@ -47,7 +48,7 @@ export function StatusPill({ i, lang = 'en', big }: { i: Pick<Incident, 'status'
 export function Priority({ s }: { s: Severity }) {
   return (
     <span className={`prio p-${s}`}>
-      <span className="pdot" />
+      <span className="pdot" aria-hidden />
       {s[0].toUpperCase() + s.slice(1)}
     </span>
   );
@@ -152,10 +153,10 @@ function stepTime(i: Incident, k: number): number | undefined {
 
 /** Plain-language who-did-it for a step. "safe" hides people and units on security cases. */
 function stepWho(i: Incident, k: number, safe: boolean, lang: Lang): string | undefined {
-  if (k === 0) return `via ${CHANNEL[i.reports[0]?.channel] ?? 'web'}`;
-  if (k === 1 && !i.t.verified) return 'Auto-checked';
+  if (k === 0) return tr('step.via', lang, { ch: tr(`ch.${i.reports[0]?.channel ?? 'web'}` as Parameters<typeof tr>[0], lang) });
+  if (k === 1 && !i.t.verified) return tr('step.auto', lang);
   if (safe) {
-    if (k === 1) return i.restricted ? tr('t.control', lang) : 'Checked';
+    if (k === 1) return i.restricted ? tr('t.control', lang) : tr('step.checked', lang);
     if (k >= 2 && k <= 5) return i.restricted ? tr('t.secunit', lang) : agency(i.agencyId)?.short;
     return undefined;
   }
@@ -167,10 +168,10 @@ function stepWho(i: Incident, k: number, safe: boolean, lang: Lang): string | un
 export function Stepper({ i, compact, safe = false, lang = 'en' }: { i: Incident; compact?: boolean; safe?: boolean; lang?: Lang }) {
   const cur = stepOf(i);
   const final = i.status === 'closed' || i.status === 'referred';
-  const sub = i.status === 'in_progress' ? (i.t.onScene ? 'On scene' : i.t.enRoute ? 'En route' : 'Working') : undefined;
+  const sub = i.status === 'in_progress' ? tr(i.t.onScene ? 'step.onscene' : i.t.enRoute ? 'step.enroute' : 'step.working', lang) : undefined;
   const side = i.side && (i.status === i.side.kind || i.side.kind === 'reopened') ? i.side : undefined;
   return (
-    <ol className={`stepper${compact ? ' compact' : ''}`} aria-label="Case progress">
+    <ol className={`stepper${compact ? ' compact' : ''}`} aria-label={tr('step.aria', lang)}>
       {STATUS_ORDER.map((st, k) => {
         const done = k < cur || (k === cur && (final || i.status === 'rejected'));
         const now = k === cur && isOpen(i);
@@ -295,6 +296,7 @@ export function Empty({ children }: { children: ReactNode }) {
 /** HospEase-style work-list table: grey header, row dividers, View button, 10 per page. */
 export function CaseTable({ rows, at, empty = 'No cases here. New cases appear here and in your inbox.', pageSize = 10, showWho = true }: { rows: Incident[]; at: number; empty?: string; pageSize?: number; showWho?: boolean }) {
   const [page, setPage] = useState(0);
+  const alerting = useAlertIds();
   const pages = Math.max(1, Math.ceil(rows.length / pageSize));
   const p = Math.min(page, pages - 1);
   const shown = rows.slice(p * pageSize, p * pageSize + pageSize);
@@ -317,7 +319,7 @@ export function CaseTable({ rows, at, empty = 'No cases here. New cases appear h
           </thead>
           <tbody>
             {shown.map((i) => (
-              <tr key={i.id} className="click" onClick={() => go(`/case/${i.id}`)}>
+              <tr key={i.id} className={`click${alerting.has(i.id) ? ` row-alert${at - i.createdAt < ALERT_FLASH_MS ? ' row-flash' : ''}` : ''}`} onClick={() => go(`/case/${i.id}`)}>
                 <td className="mono">{i.ref}</td>
                 <td>
                   <div className="row nowrap" style={{ gap: 8 }}>
@@ -376,20 +378,27 @@ export function CaseTable({ rows, at, empty = 'No cases here. New cases appear h
   );
 }
 
+/** Cases currently ringing for the signed-in person (unopened SOS / Officer SOS / Critical). */
+export function useAlertIds() {
+  const s = useStore((x) => x);
+  const me = persona();
+  return useMemo(() => new Set(alertsFor(s, me).map((a) => a.id)), [s, me]);
+}
+
 // ---------- toasts ----------
 
-type ToastT = { id: number; text: string; tone: 'good' | 'bad' | 'info' };
+type ToastT = { id: number; text: string; tone: 'good' | 'bad' | 'info'; action?: { label: string; href: string } };
 let toasts: ToastT[] = [];
 const toastListeners = new Set<() => void>();
 let toastId = 0;
-export function toast(text: string, tone: ToastT['tone'] = 'good') {
-  const t = { id: ++toastId, text, tone };
+export function toast(text: string, tone: ToastT['tone'] = 'good', action?: ToastT['action']) {
+  const t = { id: ++toastId, text, tone, action };
   toasts = [...toasts, t];
   toastListeners.forEach((l) => l());
   setTimeout(() => {
     toasts = toasts.filter((x) => x.id !== t.id);
     toastListeners.forEach((l) => l());
-  }, 4500);
+  }, action ? 9000 : 4500);
 }
 /** Run an action; show the error as a toast, or the success message. Returns true on success. */
 export function run(err: string | undefined, ok?: string) {
@@ -412,6 +421,14 @@ export function Toaster() {
       {toasts.map((t) => (
         <div key={t.id} className={`toast ${t.tone}`}>
           {t.text}
+          {t.action && (
+            <>
+              {' · '}
+              <a href={t.action.href} className="toast-act">
+                {t.action.label}
+              </a>
+            </>
+          )}
         </div>
       ))}
     </div>
@@ -420,15 +437,45 @@ export function Toaster() {
 
 // ---------- sheets & confirm ----------
 
+export const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+/** Keep Tab inside a modal. */
+export function trapTab(e: KeyboardEvent, root: HTMLElement | null) {
+  if (!root) return;
+  const els = [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((x) => !x.hasAttribute('hidden'));
+  if (!els.length) return;
+  const first = els[0];
+  const last = els[els.length - 1];
+  if (!root.contains(document.activeElement)) {
+    e.preventDefault();
+    first.focus();
+  } else if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
 export function Sheet({ title, onClose, children, wide }: { title: ReactNode; onClose: () => void; children: ReactNode; wide?: boolean }) {
+  const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const k = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      else if (e.key === 'Tab') trapTab(e, box.current);
+    };
     addEventListener('keydown', k);
     return () => removeEventListener('keydown', k);
   }, [onClose]);
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const first = box.current?.querySelector<HTMLElement>(FOCUSABLE);
+    first?.focus();
+    return () => opener?.focus?.();
+  }, []);
   return (
     <div className="scrim" onClick={onClose}>
-      <div className={`sheet${wide ? ' wide' : ''}`} role="dialog" aria-modal onClick={(e) => e.stopPropagation()}>
+      <div ref={box} className={`sheet${wide ? ' wide' : ''}`} role="dialog" aria-modal aria-label={typeof title === 'string' ? title : undefined} onClick={(e) => e.stopPropagation()}>
         <div className="sheet-hd">
           <h2>{title}</h2>
           <button className="btn ghost sm" onClick={onClose} aria-label="Close">
@@ -513,27 +560,28 @@ export function samplePhoto(label: string, tone = '#6b7a52') {
   return c.toDataURL('image/jpeg', 0.7);
 }
 
-export function PhotoInput({ value, onChange, label = 'Photo', sample = 'Sample photo', sampleTone }: { value?: string; onChange: (v?: string) => void; label?: string; sample?: string; sampleTone?: string }) {
+export function PhotoInput({ value, onChange, label = 'Photo', sample = 'Sample photo', sampleTone, lang = 'en' }: { value?: string; onChange: (v?: string) => void; label?: string; sample?: string; sampleTone?: string; lang?: Lang }) {
   const ref = useRef<HTMLInputElement>(null);
   return (
     <div className="field">
       <span>{label}</span>
       <div className="row">
-        {value && <img className="thumb" src={value} alt="Attached" />}
+        {value && <img className="thumb" src={value} alt={tr('r.photo.alt', lang)} />}
         <button type="button" className="btn" onClick={() => ref.current?.click()}>
-          <Icon name="camera" /> {value ? 'Change photo' : 'Take / choose photo'}
+          <Icon name="camera" /> {tr(value ? 'r.photo.change' : 'r.photo.take', lang)}
         </button>
         <button type="button" className="btn ghost" onClick={() => onChange(samplePhoto(sample, sampleTone))}>
-          Use sample photo
+          {tr('r.samplePhoto', lang)}
         </button>
         {value && (
           <button type="button" className="btn ghost sm" onClick={() => onChange(undefined)}>
-            Remove
+            {tr('r.photo.remove', lang)}
           </button>
         )}
         <input
           ref={ref}
           hidden
+          aria-label={label}
           type="file"
           accept="image/*"
           capture="environment"
@@ -602,6 +650,12 @@ const ICONS: Record<string, LucideIcon> = {
   upload: Upload,
   download: Download,
   key: KeyRound,
+  speaker: Volume2,
+  mute: VolumeX,
+  locate: LocateFixed,
+  nav: Navigation,
+  expand: Maximize2,
+  layers: Layers,
 };
 
 export function Icon({ name, size = 18 }: { name: string; size?: number }) {

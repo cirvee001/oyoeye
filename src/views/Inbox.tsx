@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Notice } from '../platform/types';
 import { actions, safety, dep, getState, inboxFor, markAllRead, markRead, persona, useStore } from '../store';
 import { CountTitle, Icon, ago, go, run, useNow } from '../ui';
+import { errText, msgText, useLang } from '../i18n';
 import { HandoffDecision } from './CaseView';
 import { TransferRow } from './Officers';
 
@@ -35,6 +36,7 @@ function openNotice(n: Notice) {
 }
 
 function NoticeRow({ n, at }: { n: Notice; at: number }) {
+  const [lang, t] = useLang();
   const incidents = useStore((s) => s.incidents);
   const me = persona();
   const i = n.incidentId ? incidents.find((x) => x.id === n.incidentId) : undefined;
@@ -46,13 +48,13 @@ function NoticeRow({ n, at }: { n: Notice; at: number }) {
       <span className="n-ico">
         <Icon name={KIND_ICON[n.kind]} size={16} />
       </span>
-      <div className="n-body" onClick={() => openNotice(n)}>
-        <div className="small">{n.text}</div>
+      <div className="n-body" role="button" tabIndex={0} onClick={() => openNotice(n)} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), openNotice(n))}>
+        <div className="small">{n.msg ? msgText(n.msg, lang) : n.text}</div>
         <div className="tiny muted">
-          {n.ref && <span className="mono">{n.ref}</span>} · {ago(n.at, at)}
+          {n.ref && <span className="mono">{n.ref}</span>} · {ago(n.at, at, lang)}
         </div>
       </div>
-      {!n.read && <span className="unread-dot" aria-label="unread" />}
+      {!n.read && <span className="unread-dot" role="img" aria-label={t('inbox.unreadDot')} />}
       {n.sosAgencyId && i?.officerSos && <SosAnswer caseId={i.id} agencyId={n.sosAgencyId} onDone={() => markRead(n.id)} />}
       {n.transferId && (
         <div className="n-actions" onClick={() => markRead(n.id)}>
@@ -66,14 +68,14 @@ function NoticeRow({ n, at }: { n: Notice; at: number }) {
       )}
       {confirm && i && r && (
         <div className="n-actions row" style={{ gap: 6 }}>
-          <button className="btn primary sm" onClick={() => (markRead(n.id), run(actions.confirmFix(i.id, 'yes', r.ref), 'Thank you. Case closed.'))}>
-            Yes, fixed
+          <button className="btn primary sm" onClick={() => (markRead(n.id), run(errText(actions.confirmFix(i.id, 'yes', r.ref), lang), t('t.closedOk')))}>
+            {t('t.yes')}
           </button>
-          <button className="btn sm" onClick={() => (markRead(n.id), run(actions.confirmFix(i.id, 'partial', r.ref), 'Reopened and escalated.'))}>
-            Partly
+          <button className="btn sm" onClick={() => (markRead(n.id), run(errText(actions.confirmFix(i.id, 'partial', r.ref), lang), t('t.reopenOk')))}>
+            {t('t.partly')}
           </button>
-          <button className="btn danger sm" onClick={() => (markRead(n.id), run(actions.confirmFix(i.id, 'no', r.ref), 'Reopened and escalated.'))}>
-            No
+          <button className="btn danger sm" onClick={() => (markRead(n.id), run(errText(actions.confirmFix(i.id, 'no', r.ref), lang), t('t.reopenOk')))}>
+            {t('t.no')}
           </button>
         </div>
       )}
@@ -82,6 +84,7 @@ function NoticeRow({ n, at }: { n: Notice; at: number }) {
 }
 
 export function Bell() {
+  const [, t] = useLang();
   const me = persona();
   const at = useNow(10_000);
   const inbox = useStore((s) => s.inbox);
@@ -103,27 +106,27 @@ export function Bell() {
   }, [open]);
   return (
     <div className="bell-wrap" ref={ref}>
-      <button className={`bell${unread ? ' has' : ''}`} onClick={() => setOpen(!open)} aria-label={`Notifications, ${unread} unread`}>
+      <button className={`bell${unread ? ' has' : ''}`} onClick={() => setOpen(!open)} aria-label={t('bell.aria', { n: unread })} aria-expanded={open}>
         <Icon name="bell" size={20} />
         {unread > 0 && <span className="bell-n">{unread > 99 ? '99+' : unread}</span>}
       </button>
       {open && (
         <div className="bell-panel">
           <div className="row between bell-hd">
-            <b>Inbox — {me.name.split(' ')[0]}</b>
+            <b>{t('inbox.of', { name: me.name.split(' ')[0] })}</b>
             <div className="row" style={{ gap: 4 }}>
               {unread > 0 && (
                 <button className="btn ghost sm" onClick={markAllRead}>
-                  Mark all read
+                  {t('inbox.markall')}
                 </button>
               )}
               <a className="btn ghost sm" href="#/inbox">
-                View all
+                {t('inbox.viewall')}
               </a>
             </div>
           </div>
           <div className="bell-list">
-            {!mine.length && <div className="empty small">No notifications yet. Handoffs, escalations and updates for you appear here.</div>}
+            {!mine.length && <div className="empty small">{t('inbox.empty.bell')}</div>}
             {mine.slice(0, 25).map((n) => (
               <NoticeRow key={n.id} n={n} at={at} />
             ))}
@@ -135,6 +138,7 @@ export function Bell() {
 }
 
 export function InboxPage() {
+  const [, t] = useLang();
   const at = useNow(10_000);
   const inbox = useStore((s) => s.inbox);
   const meId = useStore((s) => s.signedInId);
@@ -146,21 +150,21 @@ export function InboxPage() {
       <section className="card worklist">
         <div className="wl-head">
           <h2>
-            <CountTitle title="Inbox" n={mine.filter((n) => !n.read).length} />
+            <CountTitle title={t('inbox.title')} n={mine.filter((n) => !n.read).length} />
           </h2>
-          <div className="seg">
-            <button className={!unreadOnly ? 'on' : ''} onClick={() => setUnreadOnly(false)}>
-              All
+          <div className="seg" role="group" aria-label={t('inbox.title')}>
+            <button className={!unreadOnly ? 'on' : ''} aria-pressed={!unreadOnly} onClick={() => setUnreadOnly(false)}>
+              {t('inbox.all')}
             </button>
-            <button className={unreadOnly ? 'on' : ''} onClick={() => setUnreadOnly(true)}>
-              Unread
+            <button className={unreadOnly ? 'on' : ''} aria-pressed={unreadOnly} onClick={() => setUnreadOnly(true)}>
+              {t('inbox.unread')}
             </button>
           </div>
           <button className="btn" onClick={markAllRead}>
-            Mark all read
+            {t('inbox.markall')}
           </button>
         </div>
-        {!rows.length && <div className="empty">Nothing here. New handoffs and updates for you appear here.</div>}
+        {!rows.length && <div className="empty">{t('inbox.empty')}</div>}
         {rows.map((n) => (
           <NoticeRow key={n.id} n={n} at={at} />
         ))}
@@ -190,7 +194,7 @@ function SosAnswer({ caseId, agencyId, onDone }: { caseId: string; agencyId: str
         </>
       ) : (
         <>
-          <input className="input" style={{ width: 180 }} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why not?" aria-label="Reason" />
+          <input className="input" style={{ width: 180 }} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why not?" aria-label="Reason you cannot go" />
           <button className="btn sm" onClick={() => (onDone(), run(safety.respond(caseId, agencyId, false, reason), 'Recorded.'))}>
             Send
           </button>

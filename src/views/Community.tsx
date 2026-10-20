@@ -1,28 +1,21 @@
 import { useState } from 'react';
 import type { FocalGroup, Person } from '../platform/types';
 import { FOCAL_GROUPS, LEADERS, agency, community, communityCases, dep, focalManageable, lgaOf, persona, safeSecurity, subLabel, useStore, validPhone } from '../store';
-import { useLang } from '../i18n';
+import { catLabel, useLang } from '../i18n';
 import { initials } from '../roles';
 import { Card, CatIcon, Chips, CountTitle, Icon, Sheet, StatusPill, ago, go, run, useNow } from '../ui';
 import { StaffStatus } from './Stations';
 
 /** "Help from police, Amotekun and 615 is free" — on every citizen and focal-person screen (v2.3 §4.4). */
 export function HelpBanner() {
-  const [lang] = useLang();
+  const [, t] = useLang();
   return (
-    <div className="help-free">
+    <div className="help-free" role="note">
       <a href="#/misconduct">
-      {lang === 'yo' ? (
-        // DRAFT TRANSLATION — review with a native speaker before any pilot.
-        <>Ìrànlọ́wọ́ ọlọ́pàá, Àmọ̀tẹ́kùn àti 615 jẹ́ ọ̀fẹ́. Má ṣe sanwó. Ẹ fi ẹnikẹ́ni tó bá béèrè owó sùn: tẹ ibí tàbí pe *615*7#.</>
-      ) : (
-        <>
-          Help from police, Amotekun and 615 is free. <b>Never pay.</b> Report anyone who asks: tap here or dial *615*7#.
-        </>
-      )}
+        {t('help.free')} <b>{t('help.never')}</b> {t('help.report')}
       </a>
       <a className="hf-rules" href="#/rules">
-        {lang === 'yo' ? 'Ìwé Òfin' : 'Rule book'}
+        {t('nav.rules')}
       </a>
     </div>
   );
@@ -30,41 +23,40 @@ export function HelpBanner() {
 
 /** Community focal person: home. */
 export function FocalHome() {
+  const [, t] = useLang();
   const me = persona();
   const s = useStore((x) => x);
   const mine = communityCases(s, me);
   return (
     <div className="phone">
       <div>
-        <h1>Hello, {me.name.split(' ').slice(-2, -1)[0] ?? me.name}</h1>
-        <p className="muted small">
-          {me.title} · {me.verified ? 'Verified focal person' : 'Waiting for your commander to verify you'}
-        </p>
+        <h1>{t('fc.hello', { name: me.name.split(' ').slice(-2, -1)[0] ?? me.name })}</h1>
+        <p className="muted small">{`${me.title} · ${me.verified ? t('fc.verified') : t('fc.waiting')}`}</p>
       </div>
       <div className="tiles">
         <button className="tile" onClick={() => go('/report')}>
           <span className="tile-ico">
             <Icon name="plus" size={30} />
           </span>
-          <b>Report for my community</b>
-          <small>Security or a problem in {me.community}</small>
+          <b>{t('r.focal.title')}</b>
+          <small>{t('fc.report.sub', { c: me.community ?? '' })}</small>
         </button>
         <button className="tile" onClick={() => go('/mycommunity')}>
           <span className="tile-ico">
             <Icon name="officers" size={30} />
           </span>
-          <b>My community</b>
-          <small>{mine.filter((i) => i.status !== 'closed').length} open cases near {me.community}</small>
+          <b>{t('nav.community')}</b>
+          <small>{t('fc.open', { n: mine.filter((i) => i.status !== 'closed').length, c: me.community ?? '' })}</small>
         </button>
       </div>
       <div className="notice small row between">
-        <span>OyoEye Rule Book — 8 short rules that keep OyoEye working for everyone.</span>
+        <span>{t('fc.rules')}</span>
         <a className="btn sm" href="#/rules">
-          Read again
+          {t('rb.again')}
         </a>
       </div>
       <div className="notice small">
-        Your reports go to the 615 control room. They are checked by a person before anyone is sent. If your group offers to help, the operator decides — civilians are never dispatched.
+        {t('fc.note')}
       </div>
     </div>
   );
@@ -72,6 +64,7 @@ export function FocalHome() {
 
 /** My community: cases in their ward/village and 2 km around, security in safe words only. */
 export function MyCommunity() {
+  const [lang, t] = useLang();
   const me = persona();
   const at = useNow();
   const s = useStore((x) => x);
@@ -79,31 +72,29 @@ export function MyCommunity() {
   return (
     <div className="phone">
       <div>
-        <h1>My community</h1>
-        <p className="muted small">
-          {me.community}, {me.lgaId ? lgaOf(me.lgaId).name : ''} · cases in your ward and within 2 km
-        </p>
+        <h1>{t('nav.community')}</h1>
+        <p className="muted small">{t('fc.sub', { c: me.community ?? '', lga: me.lgaId ? lgaOf(me.lgaId).name : '' })}</p>
       </div>
-      {!rows.length && <div className="empty">No cases near {me.community} right now.</div>}
+      {!rows.length && <div className="empty">{t('fc.empty', { c: me.community ?? '' })}</div>}
       {rows.map((i) => (
         <div key={i.id} className="card pad stack">
           <div className="row between">
             <span className="row" style={{ gap: 8 }}>
               <CatIcon c={i.category} size={18} />
-              <b>{i.restricted ? 'Security case' : subLabel(i.category, i.subcategory)}</b>
+              <b>{i.restricted ? t('fc.seccase') : lang === 'yo' ? catLabel(i.category, lang) : subLabel(i.category, i.subcategory)}</b>
             </span>
-            <StatusPill i={i} />
+            <StatusPill i={i} lang={lang} />
           </div>
           {i.restricted ? (
             <div className="small">
-              {safeSecurity(i)} <span className="muted">· {lgaOf(i.lgaId).name}</span>
+              {safeSecurity(i, lang)} <span className="muted">· {lgaOf(i.lgaId).name}</span>
             </div>
           ) : (
             <div className="small">
               {i.area} · {i.title}
             </div>
           )}
-          <div className="tiny muted">Reported {ago(i.createdAt, at)}</div>
+          <div className="tiny muted">{t('fc.reported', { ago: ago(i.createdAt, at, lang) })}</div>
         </div>
       ))}
     </div>

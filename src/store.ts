@@ -56,9 +56,11 @@ import type {
   SlaTable,
 } from './platform/types';
 
+import { msg, msgText, type Lang, type Msg } from './strings';
+
 export const dep = OYO;
 // v2 changes the status model; old v1 state is ignored and the demo reseeds.
-const KEY = 'oyoeye:v2.4'; // v2.2 adds stations, staff onboarding and chat to the saved state
+const KEY = 'oyoeye:v2.5'; // v2.2 adds stations, staff onboarding and chat to the saved state
 
 export interface Unseal {
   incidentId: string;
@@ -106,6 +108,17 @@ export interface State {
   mapPrefs: Record<string, { layers: string[]; time: '24h' | '7d' | '30d' }>;
   /** v2.4: current OyoEye Rule Book version. */
   rulebookVersion: number;
+  // v2.5
+  /** Demo control: "Use my location" returns this point instead of the presenter's real one. */
+  simLocation: 'off' | 'agbowo' | 'igangan' | 'moniya' | 'ogbomoso';
+  /** Cases created before this time never ring (seeded history). */
+  alertsSince: number;
+  /** "control|caseId" (any operator opened it) or "personId|caseId". */
+  alertOpened: Record<string, number>;
+  /** personId → alert sound muted until. */
+  alertMute: Record<string, number>;
+  /** "personId|page" → last map view. */
+  mapViews: Record<string, { lat: number; lng: number; zoom: number }>;
 }
 
 let state: State;
@@ -199,18 +212,20 @@ export function verifyChain(entries = state.audit) {
 const SYSTEM = { id: 'system', name: 'OyoEye' };
 const AI = { id: 'ai', name: 'Triage assistant' };
 
-function send(at: number, to: Person | undefined, channel: OutboundMessage['channel'], text: string, incidentId?: string, phone?: string) {
+function send(at: number, to: Person | undefined, channel: OutboundMessage['channel'], text: string, incidentId?: string, phone?: string, lang?: Lang) {
   if (at < quietBefore) return;
   if (!to && !phone) return;
-  state.outbox.unshift({ id: `m${state.seq}-${state.outbox.length}-${at}`, at, channel, to: to?.name ?? 'Reporter', phone: phone ?? to!.phone, text, incidentId });
+  state.outbox.unshift({ id: `m${state.seq}-${state.outbox.length}-${at}`, at, channel, to: to?.name ?? 'Reporter', phone: phone ?? to!.phone, text, incidentId, lang });
   if (state.outbox.length > 600) state.outbox.length = 600;
 }
 
 let noticeSeq = 0;
-function notify(at: number, to: (string | undefined)[], kind: NoticeKind, text: string, i?: Incident, handoffId?: string, transferId?: string, channelId?: string, sosAgencyId?: string) {
+function notify(at: number, to: (string | undefined)[], kind: NoticeKind, body: string | Msg, i?: Incident, handoffId?: string, transferId?: string, channelId?: string, sosAgencyId?: string) {
   if (at < quietBefore) return;
+  const text = typeof body === 'string' ? body : msgText(body, 'en');
+  const m = typeof body === 'string' ? undefined : body;
   for (const id of new Set(to.filter(Boolean) as string[])) {
-    state.inbox.unshift({ id: `n${at}-${noticeSeq++}`, at, to: id, kind, text, incidentId: i?.id, ref: i?.ref, handoffId, transferId, channelId, sosAgencyId, read: at < readBefore });
+    state.inbox.unshift({ id: `n${at}-${noticeSeq++}`, at, to: id, kind, text, msg: m, incidentId: i?.id, ref: i?.ref, handoffId, transferId, channelId, sosAgencyId, read: at < readBefore });
   }
   if (state.inbox.length > 800) state.inbox.length = 800;
 }
@@ -243,15 +258,23 @@ function canText(i: Incident, r: Report) {
   return !quiet || !!r.reporter.optInUpdates;
 }
 
-function tellReporter(at: number, i: Incident, r: Report, text: string) {
-  if (r.reporter?.personId) notify(at, [r.reporter.personId], 'citizen', text, i);
-  if (canText(i, r)) send(at, undefined, r.channel === 'whatsapp' ? 'whatsapp' : 'sms', `OyoEye ${r.ref}: ${text} Help is free. Never pay.`, i.id, r.reporter!.phone);
+/** The reporter's language: their saved choice when signed in, else the language they reported in. */
+export function reporterLang(r: Pick<Report, 'reporter' | 'lang'>): Lang {
+  return person(r.reporter?.personId)?.language ?? r.lang ?? 'en';
 }
 
-function notifyReporters(i: Incident, at: number, text: string) {
-  i.updates.push({ at, text });
-  for (const r of i.reports) tellReporter(at, i, r, text);
-  tellFocalWatchers(at, i, text);
+function tellReporter(at: number, i: Incident, r: Report, m: Msg) {
+  if (r.reporter?.personId) notify(at, [r.reporter.personId], 'citizen', m, i);
+  if (canText(i, r)) {
+    const lang = reporterLang(r);
+    send(at, undefined, r.channel === 'whatsapp' ? 'whatsapp' : 'sms', msgText(msg('m.sms', { ref: r.ref, text: m }), lang), i.id, r.reporter!.phone, lang);
+  }
+}
+
+function notifyReporters(i: Incident, at: number, m: Msg) {
+  i.updates.push({ at, text: msgText(m, 'en'), msg: m });
+  for (const r of i.reports) tellReporter(at, i, r, m);
+  tellFocalWatchers(at, i, m);
 }
 
 // ---------- reports ----------
@@ -274,6 +297,10 @@ export interface ReportInput {
   callRef?: string;
   actor?: Person;
   focal?: Report['focal'];
+  /** v2.5: reporter's language (defaults to the signed-in person's or the device's). */
+  lang?: Lang;
+  /** v2.5: SOS sent before a location arrived. */
+  locationUnknown?: boolean;
 }
 
 function jitter(seed: string, spread: number) {
@@ -330,6 +357,7 @@ function submitAt(at: number, input: ReportInput) {
   const { lat, lng } = input.lat != null && input.lng != null ? { lat: input.lat, lng: input.lng } : coordsFor(input.lgaId, input.area, salt);
   const reportRef = refFor(c.code, at);
   const report: Report = {
+    lang: input.lang ?? person(input.reporter?.personId)?.language ?? (seeding || input.actor ? 'en' : state.lang),
     ref: reportRef,
     text: input.text,
     channel: input.sos && input.channel !== 'ussd' ? 'sos' : input.channel,
@@ -370,7 +398,7 @@ function submitAt(at: number, input: ReportInput) {
       applyDeadlines(dup);
       audit(at, SYSTEM, 'Severity raised', `${from} → ${dup.severity}: 5 distinct reporters`, dup.id);
     }
-    tellReporter(at, dup, report, `Report received. Others have reported this too — it is already being handled under ${dup.ref}.`);
+    tellReporter(at, dup, report, msg('m.recv.dup', { ref: dup.ref }));
     return { ref: reportRef, incident: dup, merged: true };
   }
 
@@ -407,6 +435,7 @@ function submitAt(at: number, input: ReportInput) {
     updates: [],
     reopenCount: 0,
     ai,
+    locationUnknown: input.locationUnknown || undefined,
   };
   applyDeadlines(i);
   state.incidents.unshift(i);
@@ -434,16 +463,16 @@ function submitAt(at: number, input: ReportInput) {
       notify(at, dutyLeads(), 'info', `${input.sos ? 'SOS' : 'Critical report'} waiting for review: ${place(i)}.`, i);
       send(at, person(dutyLeads()[0]), 'sms', alertText(i, input.sos ? 'SOS — OYOEYE' : 'CRITICAL SECURITY REPORT'), i.id);
     }
-    notifyReporters(i, at, `Report received. Location: ${i.area}. The ${dep.emergencyLine} control room is reviewing it now.${input.sos ? ' Stay safe; move away if you can.' : ''}`);
+    notifyReporters(i, at, msg(input.sos ? 'm.recv.sos' : 'm.recv.sec', { area: i.area }));
   } else if (category === 'other' || !routed.agency || (ai.confidence < 0.5 && !input.category)) {
     // A4: unclear reports wait for central review in the control room — not Security.
     audit(at, SYSTEM, 'Held for review', 'Unclassified or low confidence — a person must confirm the category', i.id);
     notify(at, dispatchers(), 'info', `Unclassified report needs review: "${titleFor(input.text, 50)}" — ${place(i)}.`, i);
-    notifyReporters(i, at, `Report received. Location: ${i.area}. Status: pending review.`);
+    notifyReporters(i, at, msg('m.recv.pending', { area: i.area }));
   } else {
     const officer = pickOfficer(dep, state.incidents, routed.agency.id, onDuty);
     createHandoff(i, at, SYSTEM, { agencyId: routed.agency.id, personId: officer?.id }, 'Routing rule — covers this problem and area');
-    notifyReporters(i, at, `Report received. Location: ${i.area}. Sent to ${routed.agency.short}.`);
+    notifyReporters(i, at, msg('m.recv.sent', { area: i.area, unit: routed.agency.short }));
   }
   return { ref: reportRef, incident: i, merged: false };
 }
@@ -513,7 +542,7 @@ function acceptAt(i: Incident, at: number, me: Person) {
   i.status = agency(h.toAgencyId)?.kind === 'control_room' ? (i.t.verified ? 'verified' : 'pending') : 'accepted';
   audit(at, me, 'Handoff accepted', `${me.name} accepted${h.kind === 'unit' ? ` for ${agency(h.toAgencyId)?.short}` : ''}`, i.id);
   if (h.fromId !== SYSTEM.id) notify(at, [h.fromId], 'accepted', `${me.name} accepted ${i.ref} (${subLabel(i.category, i.subcategory)}).`, i);
-  if (h.kind !== 'handback' && h.kind !== 'control') notifyReporters(i, at, i.restricted ? 'A security unit has accepted your report.' : `${agency(i.agencyId)?.short} has accepted your report.`);
+  if (h.kind !== 'handback' && h.kind !== 'control') notifyReporters(i, at, i.restricted ? msg('m.accepted.sec') : msg('m.accepted', { unit: agency(i.agencyId)?.short ?? '' }));
 }
 
 // ---------- escalation ----------
@@ -629,7 +658,7 @@ function reopen(i: Incident, at: number, actor: { id: string; name: string }, wh
   }
   const managers = agencyManagers(dep, i.agencyId, onDuty).map((p) => p.id);
   notify(at, [i.officerId, ...managers], 'reopened', `${i.ref} reopened: ${why}. Accept it again and fix it.`, i);
-  notifyReporters(i, at, `Your report has been reopened and sent back to ${i.restricted ? 'the unit' : agency(i.agencyId)?.short}.`);
+  notifyReporters(i, at, i.restricted ? msg('m.reopened.sec') : msg('m.reopened', { unit: agency(i.agencyId)?.short ?? '' }));
 }
 
 const iCan = {
@@ -663,7 +692,7 @@ export const actions = {
       const civic = !['police', 'corps', 'sensitive_desk', 'control_room'].includes(to.kind);
       const officer = civic ? pickOfficer(dep, state.incidents, to.id, onDuty) : undefined;
       createHandoff(i, at, me, { agencyId: to.id, personId: officer?.id }, v.reason, v.note);
-      notifyReporters(i, at, i.restricted ? 'Your report has been checked and passed to a response unit.' : `Your report has been checked and sent to ${to.short}.`);
+      notifyReporters(i, at, i.restricted ? msg('m.checked.sec') : msg('m.checked', { unit: to.short }));
     }),
 
   /** Pass case: the rules depend on who you are (PRD 3.3). */
@@ -712,7 +741,7 @@ export const actions = {
       audit(at, me, 'Armed dispatch confirmed', `${agency(h.toAgencyId)?.short} — names-a-group case reviewed`, i.id);
       createHandoff(i, at, me, { agencyId: h.toAgencyId }, h.reason, h.note);
       notify(at, [h.byId], 'info', `${me.name} confirmed armed dispatch of ${i.ref} to ${agency(h.toAgencyId)?.short}.`, i);
-      notifyReporters(i, at, 'Your report has been checked and passed to a response unit.');
+      notifyReporters(i, at, msg('m.checked.sec'));
     }),
   /** Coordinator: approve a held kidnapping notice to traditional rulers. */
   approveNotice: (id: string) =>
@@ -788,7 +817,7 @@ export const actions = {
       if (!question.trim()) return 'Write the question';
       if (i.reports.every((r) => r.identity === 'anonymous')) return 'Anonymous reporter — no way to ask';
       audit(at, me, 'Question to reporter', question, i.id);
-      notifyReporters(i, at, `The control room asks: ${question} (reply to this message; your identity stays protected)`);
+      notifyReporters(i, at, msg('m.ask', { q: question }));
     }),
 
   mergeInto: (id: string, targetId: string) =>
@@ -825,7 +854,7 @@ export const actions = {
         if (isDutyLead(me)) confirmHoaxAt(at, i, me);
         else notify(at, dutyLeads(), 'info', `Confirm hoax? ${me.name} rejected ${i.ref} as a deliberate false alarm: "${reason.trim()}"`, i);
       }
-      notifyReporters(i, at, 'Your report was reviewed and closed. If you are in danger, call 615.');
+      notifyReporters(i, at, msg('m.rejected'));
     }),
 
   /** Citizen: cancel my own report while it is still pending review. */
@@ -854,7 +883,7 @@ export const actions = {
       i.t.acknowledged = i.t.acknowledged ?? at;
       i.by.started = me.name;
       audit(at, me, emergency ? 'En route' : 'Work started', '', i.id);
-      notifyReporters(i, at, emergency ? 'Responders are on the way.' : 'Work on your report has started.');
+      notifyReporters(i, at, msg(emergency ? 'm.onway' : 'm.started'));
     }),
 
   onScene: (id: string) =>
@@ -865,7 +894,7 @@ export const actions = {
       if (me.loneDuty && !i.lone) startLone(at, i, me.id);
       if (i.lone && !i.lone.nextDue) i.lone = { ...i.lone, nextDue: at + state.loneCheckMins * MIN };
       audit(at, me, 'On scene', `Location confirmed near ${i.area}`, i.id);
-      notifyReporters(i, at, 'Responders have arrived.');
+      notifyReporters(i, at, msg('m.arrived'));
     }),
 
   addEvidence: (id: string, kind: EvidenceKind, text: string, photo?: string) =>
@@ -915,7 +944,7 @@ export const actions = {
       i.status = 'resolved';
       audit(at, me, 'Marked resolved', `${v.outcome ? `${v.outcome}. ` : ''}${v.note}`, i.id);
       if (c.citizenVerification) {
-        notifyReporters(i, at, `${agency(i.agencyId)?.short} says this is fixed${v.note ? `: "${v.note}"` : ''}. Is it fixed? Reply YES, NO or PARTLY.`);
+        notifyReporters(i, at, v.note ? msg('m.fixed.note', { unit: agency(i.agencyId)?.short ?? '', note: v.note }) : msg('m.fixed', { unit: agency(i.agencyId)?.short ?? '' }));
       } else {
         const managers = agencyManagers(dep, i.agencyId, onDuty).map((p) => p.id).filter((x) => x !== me.id);
         notify(at, managers, 'resolved', `${me.name} marked ${i.ref} resolved (${v.outcome ?? 'done'}). Waiting for your sign-off.`, i);
@@ -935,7 +964,7 @@ export const actions = {
       audit(at, me, referred ? 'Referred to investigation' : 'Signed off & closed', i.outcome ?? '', i.id);
       if (!referred) askFeedback(at, i);
       if (i.officerId) notify(at, [i.officerId], 'info', `${me.name} signed off ${i.ref}. Case closed.`, i);
-      notifyReporters(i, at, i.restricted ? 'The response to your report has been completed. Thank you for keeping your community safe.' : 'Your report has been closed. Thank you.');
+      notifyReporters(i, at, msg(i.restricted ? 'm.closed.sec' : 'm.closed'));
     }),
 
   rejectResolution: (id: string, reason: string) =>
@@ -1831,19 +1860,21 @@ export function focalSignIn(phone: string, pin: string): string | undefined {
 }
 
 /** Inbox updates for focal persons about cases in their community, in safe words. */
-function tellFocalWatchers(at: number, i: Incident, text: string) {
+function tellFocalWatchers(at: number, i: Incident, m: Msg) {
   if (i.sensitiveOnly || seeding) return;
   for (const p of focalPersons()) {
     if (!isVerifiedFocal(p) || !inCommunity(p, i) || i.reports.some((r) => r.reporter?.personId === p.id)) continue;
-    notify(at, [p.id], 'citizen', i.restricted ? `Security case in ${p.community} area: ${safeSecurity(i)}` : `${subLabel(i.category, i.subcategory)} at ${i.area}: ${text}`);
+    notify(at, [p.id], 'citizen', i.restricted ? msg('m.focal.sec', { community: p.community ?? '', safe: safeSecurityMsg(i) }) : msg('m.focal.civic', { what: `@cat.${i.category}`, area: i.area, text: m }));
   }
 }
-export function safeSecurity(i: Incident) {
-  if (['closed', 'referred'].includes(i.status)) return 'The response has been completed.';
-  if (i.status === 'rejected') return 'The report was reviewed and closed.';
-  if (i.status === 'pending' || i.status === 'verified') return 'The 615 control room is reviewing it.';
-  return 'A security unit is responding.';
+/** Security progress in safe words (no unit, officer or place details). */
+export function safeSecurityMsg(i: Incident): Msg {
+  if (['closed', 'referred'].includes(i.status)) return msg('safe.done');
+  if (i.status === 'rejected') return msg('safe.closed');
+  if (i.status === 'pending' || i.status === 'verified') return msg('safe.review');
+  return msg('safe.responding');
 }
+export const safeSecurity = (i: Incident, lang: Lang = 'en') => msgText(safeSecurityMsg(i), lang);
 
 // ---------- group-naming guard (§3.4) ----------
 
@@ -1911,8 +1942,8 @@ function askFeedback(at: number, i: Incident) {
   if (i.officerSos) return;
   for (const r of i.reports) {
     if (r.identity === 'anonymous') continue; // anonymous reporters answer on the tracking page
-    if (r.reporter?.personId) notify(at, [r.reporter.personId], 'feedback', `Your case ${r.ref} is closed. How were you treated? It takes 30 seconds.`, i);
-    if (canText(i, r)) send(at, undefined, 'sms', `OyoEye ${r.ref}: your case is closed. Did anyone ask you for money? Reply 1 for Yes, 2 for No. Help is free. Never pay.`, i.id, r.reporter!.phone);
+    if (r.reporter?.personId) notify(at, [r.reporter.personId], 'feedback', msg('m.rate', { ref: r.ref }), i);
+    if (canText(i, r)) send(at, undefined, 'sms', msgText(msg('m.rate.sms', { ref: r.ref }), reporterLang(r)), i.id, r.reporter!.phone, reporterLang(r));
   }
   audit(at, SYSTEM, 'Conduct feedback requested', `${i.reports.filter((r) => r.identity !== 'anonymous').length} reporter(s) asked "How were you treated?"`, i.id);
 }
@@ -2354,7 +2385,7 @@ function confirmHoaxAt(at: number, i: Incident, me: Person) {
   audit(at, me, 'Hoax confirmed', 'Deliberate false alarm — counts against reporter standing for 12 months', i.id);
   const r = i.reports[0];
   const sd = standingOfReport(state, i);
-  if (r?.reporter?.personId && sd) notify(at, [r.reporter.personId], 'info', `Your reporter standing is now ${sd.label}: report ${r.ref} was found to be a deliberate false alarm. You can appeal from your Home page.`, i);
+  if (r?.reporter?.personId && sd) notify(at, [r.reporter.personId], 'info', msg('m.hoax', { level: `@sd.lvl.${sd.level}`, ref: r.ref }), i);
 }
 
 export const standing = {
@@ -2418,7 +2449,7 @@ export function decideAppeal(id: string, uphold: boolean, note = ''): string | u
     }
   audit(at, me, uphold ? 'Appeal upheld' : 'Appeal rejected', c.id);
   const sd = c.complainant.personId ? standingFor(state, { personId: c.complainant.personId }) : undefined;
-  notify(at, [c.complainant.personId], 'info', uphold ? `Your appeal was upheld. Your reporter standing is now ${sd?.label ?? 'recalculated'}.` : 'Your appeal was not upheld. The standing stays until 12 months after the last hoax.');
+  notify(at, [c.complainant.personId], 'info', uphold ? msg('m.appeal.up', { level: sd ? `@sd.lvl.${sd.level}` : 'recalculated' }) : msg('m.appeal.down'));
   commit();
 }
 
@@ -2477,7 +2508,7 @@ export function citizenSignIn(phone: string, firstName?: string) {
   let p = citizenByPhone(phone);
   if (!p) {
     const d = digits(phone);
-    p = { id: `c${d}`, name: (firstName || 'Citizen').trim(), role: 'citizen', title: 'Resident', phone: `${d.slice(0, 4)} ${d.slice(4, 7)} ${d.slice(7)}` };
+    p = { id: `c${d}`, name: (firstName || 'Citizen').trim(), role: 'citizen', title: 'Resident', phone: `${d.slice(0, 4)} ${d.slice(4, 7)} ${d.slice(7)}`, language: state.lang };
     state.citizens.push(p);
   }
   signIn(p.id);
@@ -2507,8 +2538,34 @@ export function setDuty(personId: string, on: boolean, shift?: Shift) {
   commit();
 }
 
-export function setLang(lang: 'en' | 'yo') {
+// ---------- v2.5: language ----------
+
+const LANG_KEY = 'oyoeye:lang';
+function deviceLang(): Lang | undefined {
+  try {
+    const v = localStorage.getItem(LANG_KEY);
+    return v === 'yo' || v === 'en' ? v : undefined;
+  } catch {
+    return undefined;
+  }
+}
+/** Citizens and focal persons: their saved choice; guests: the device's; staff screens stay English. */
+export function currentLang(s: State = state): Lang {
+  const p = person(s.signedInId);
+  if (!p) return s.lang;
+  if (p.role === 'citizen' || p.role === 'focal') return p.language ?? s.lang;
+  return 'en';
+}
+/** Remember the choice on the person (signed-in citizen / focal person) and on the device. */
+export function setLang(lang: Lang) {
   state.lang = lang;
+  try {
+    localStorage.setItem(LANG_KEY, lang);
+  } catch {
+    /* private mode: the choice lasts for this visit only */
+  }
+  const p = person(state.signedInId);
+  if (p && (p.role === 'citizen' || p.role === 'focal') && p.language !== lang) p.language = lang;
   commit();
 }
 
@@ -2549,6 +2606,73 @@ export function resetDemo() {
   location.reload();
 }
 
+// ======================= v2.5: alerts, simulated location, map views =======================
+
+/** Operators and duty leads share one "opened" flag: one operator opening an alert stops it for all of them. */
+export const alertKey = (me: Person, caseId: string) => (isControl(me) ? `control|${caseId}` : `${me.id}|${caseId}`);
+export function markAlertOpened(caseId: string) {
+  const me = persona();
+  const k = alertKey(me, caseId);
+  if (me.id === GUEST.id || state.alertOpened[k]) return;
+  state.alertOpened = { ...state.alertOpened, [k]: now() };
+  commit();
+}
+export const alertMutedUntil = (s: State, personId?: string) => (personId ? s.alertMute[personId] ?? 0 : 0);
+export function muteAlerts(mins = 15) {
+  const me = persona();
+  const at = now();
+  state.alertMute = { ...state.alertMute, [me.id]: at + mins * MIN };
+  audit(at, me, `Alert muted ${mins} min`, `Alert sound muted until ${hhmm(at + mins * MIN)}`);
+  commit();
+}
+export function unmuteAlerts() {
+  const me = persona();
+  state.alertMute = { ...state.alertMute, [me.id]: 0 };
+  audit(now(), me, 'Alert unmuted', 'Alert sound on');
+  commit();
+}
+
+export function setSimLocation(v: State['simLocation']) {
+  state.simLocation = v;
+  commit();
+}
+
+/** The caller of an SOS sent with no location adds their area afterwards (optional). */
+export function addSosLocation(ref: string, lgaId: string, area: string, lat?: number, lng?: number): string | undefined {
+  const i = incidentByRef(ref);
+  if (!i) return 'Report not found';
+  if (!i.locationUnknown) return 'This report already has a location';
+  const at = now();
+  const pt = lat != null && lng != null ? { lat, lng } : coordsFor(lgaId, area, String(state.seq));
+  i.lgaId = lgaId;
+  i.area = area;
+  i.lat = pt.lat;
+  i.lng = pt.lng;
+  i.locationUnknown = undefined;
+  i.reports[0].lat = pt.lat;
+  i.reports[0].lng = pt.lng;
+  audit(at, { id: 'protected', name: 'Reporter (protected)' }, 'Caller added location', `${area}, ${lgaOf(lgaId).name}`, i.id);
+  i.updates.push({ at, text: msgText(msg('m.sosarea', { area }), 'en'), msg: msg('m.sosarea', { area }) });
+  notify(at, isOpen(i) ? [...dispatchers(), ...dutyLeads()] : [], 'info', `SOS ${i.ref}: caller added location — ${area}, ${lgaOf(lgaId).name}.`, i);
+  commit();
+}
+
+export function saveMapView(page: string, v: { lat: number; lng: number; zoom: number }) {
+  const k = `${state.signedInId ?? 'guest'}|${page}`;
+  const old = state.mapViews[k];
+  if (old && Math.abs(old.lat - v.lat) < 1e-5 && Math.abs(old.lng - v.lng) < 1e-5 && old.zoom === v.zoom) return;
+  state.mapViews = { ...state.mapViews, [k]: v };
+  commit();
+}
+export function resetMapView(page: string) {
+  const k = `${state.signedInId ?? 'guest'}|${page}`;
+  if (!state.mapViews[k]) return;
+  const next = { ...state.mapViews };
+  delete next[k];
+  state.mapViews = next;
+  commit();
+}
+
 // ---------- boot ----------
 
 import { buildSeed, initialDuty, seedCaseCards, seedChat, seedV23 } from './seed';
@@ -2567,7 +2691,7 @@ function fresh(): State {
     signedInId: undefined,
     citizens: [],
     duty: {},
-    lang: 'en',
+    lang: deviceLang() ?? 'en',
     unseals: [],
     lastViewLog: {},
     agencies: dep.agencies,
@@ -2582,6 +2706,11 @@ function fresh(): State {
     loneCheckMins: 15,
     mapPrefs: {},
     rulebookVersion: 1,
+    simLocation: 'agbowo',
+    alertsSince: 0,
+    alertOpened: {},
+    alertMute: {},
+    mapViews: {},
   };
 }
 
@@ -2596,7 +2725,7 @@ function boot() {
         dep.people.splice(0, dep.people.length, ...s.people);
         s.agencies = dep.agencies;
         s.people = dep.people;
-        state = s;
+        state = { ...fresh(), ...s, lang: deviceLang() ?? s.lang ?? 'en' };
         return;
       }
     }
@@ -2623,6 +2752,7 @@ function boot() {
   readBefore = 0;
   tick();
   state.incidents.sort((a, b) => b.createdAt - a.createdAt);
+  state.alertsSince = Date.now(); // seeded history never rings
   commit();
 }
 

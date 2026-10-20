@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { LocationStep, placeFromPoint, type Place } from './Location';
 import type { CategoryId, Identity } from '../platform/types';
 import { dep, lgaOf, persona, submitReport } from '../store';
 import { Card, CatIcon, go, toast } from '../ui';
@@ -11,9 +12,11 @@ export function Intake() {
   const [category, setCategory] = useState<CategoryId>('security');
   const [sub, setSub] = useState('suspicious');
   const [text, setText] = useState('');
-  const [lgaId, setLga] = useState('ibn');
-  const [area, setArea] = useState(lgaOf('ibn').areas[0]);
+  const [place, setPlace] = useState<Place>(() => placeFromPoint('ibn', lgaOf('ibn').areas[0]));
   const [landmark, setLandmark] = useState('');
+  const [noLandmark, setNoLandmark] = useState(false);
+  const [tried, setTried] = useState(false);
+  const sos = sub === 'sos';
   const [identity, setIdentity] = useState<Identity>('confidential');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -24,8 +27,10 @@ export function Intake() {
       text,
       category,
       subcategory: sub,
-      lgaId,
-      area,
+      lgaId: place.lgaId,
+      area: place.area,
+      lat: place.source === 'manual' ? undefined : place.lat,
+      lng: place.source === 'manual' ? undefined : place.lng,
       landmark: landmark || undefined,
       identity,
       channel: 'call_615',
@@ -82,7 +87,7 @@ export function Intake() {
               </select>
             </label>
             <label className="field">
-              <span>In the caller's words</span>
+              <span>In the caller's words (at least 6 characters)</span>
               <textarea className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Write it in the caller's words where possible" />
             </label>
             <button className="btn primary lg" disabled={text.trim().length < 6} onClick={() => setStep(2)}>
@@ -94,42 +99,13 @@ export function Intake() {
       {step === 2 && (
         <Card title="2. Where?">
           <div className="stack lg">
-            <div className="grid g2">
-              <label className="field">
-                <span>LGA</span>
-                <select
-                  className="input"
-                  value={lgaId}
-                  onChange={(e) => {
-                    setLga(e.target.value);
-                    setArea(lgaOf(e.target.value).areas[0]);
-                  }}
-                >
-                  {dep.lgas.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Area</span>
-                <select className="input" value={area} onChange={(e) => setArea(e.target.value)}>
-                  {lgaOf(lgaId).areas.map((a) => (
-                    <option key={a}>{a}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <label className="field">
-              <span>Landmark</span>
-              <input className="input" value={landmark} onChange={(e) => setLandmark(e.target.value)} placeholder="e.g. opposite the filling station" />
-            </label>
+            <p className="small muted">Type the caller's landmark, then drop the pin on the map. The area and LGA fill in from the pin.</p>
+            <LocationStep intake place={place} onChange={setPlace} landmark={landmark} onLandmark={setLandmark} landmarkUnknown={noLandmark} onLandmarkUnknown={setNoLandmark} landmarkRequired={!sos} showErrors={tried} />
             <div className="row">
               <button className="btn lg" onClick={() => setStep(1)}>
                 Back
               </button>
-              <button className="btn primary lg" onClick={() => setStep(3)}>
+              <button className="btn primary lg" onClick={() => (!sos && !landmark.trim() && !noLandmark ? setTried(true) : setStep(3))}>
                 Next
               </button>
             </div>
@@ -139,7 +115,7 @@ export function Intake() {
       {step === 3 && (
         <Card title="3. Caller">
           <div className="stack lg">
-            <div className="seg">
+            <div className="seg" role="group" aria-label="Caller identity">
               {(['standard', 'confidential', 'anonymous'] as Identity[]).map((x) => (
                 <button key={x} className={identity === x ? 'on' : ''} onClick={() => setIdentity(x)}>
                   {x[0].toUpperCase() + x.slice(1)}
@@ -150,8 +126,14 @@ export function Intake() {
               <div className="notice small">The caller's number will not be stored with this case.</div>
             ) : (
               <>
-                <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Caller name (if given)" />
-                <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Call-back number" />
+                <label className="field">
+                  <span>Caller name (if given)</span>
+                  <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+                </label>
+                <label className="field">
+                  <span>Call-back number</span>
+                  <input className="input" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                </label>
                 {identity === 'confidential' && <div className="notice sealed small">Sealed: only restricted-cases officers can unseal it, and every unseal is logged.</div>}
               </>
             )}

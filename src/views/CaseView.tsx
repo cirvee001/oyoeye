@@ -30,6 +30,7 @@ import { CHANNEL, CatIcon, Chips, ConfirmButton, Icon, PhotoInput, Priority, She
 import { credibility } from './credibility';
 import { LiveMap } from './LiveMap';
 import { OfficerSosButton } from './Safety';
+import { markAlertOpened } from '../store';
 import { GROUP_TIP, REJECT_REASONS, callbackNeeded, canCloseOfficerSos, rejectLabel, safety, standing } from '../store';
 
 const back = () => (history.length > 1 ? history.back() : go('/cases'));
@@ -42,7 +43,10 @@ export function CaseView({ id }: { id: string }) {
   const allowed = i ? canOpen(me, i, dep) : false;
   const [update, setUpdate] = useState(false);
   useEffect(() => {
-    if (i && allowed) logView(i);
+    if (i && allowed) {
+      logView(i);
+      markAlertOpened(i.id); // opening the case stops its alert sound (for every operator)
+    }
   }, [i?.id, allowed]);
 
   if (!i) return <div className="empty">Case not found.</div>;

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { conduct, dep, feedbackFor, findFocalByPhone, getState, incidentByRef, submitReport } from '../store';
-import { statusLabel } from '../i18n';
+import { statusLabel, ussdText, type Lang } from '../i18n';
 import type { CategoryId } from '../platform/types';
 import { go } from '../ui';
 
@@ -14,12 +14,20 @@ export const USSD_RULES = [
   'OyoEye Rules 3/4\n5 No jungle justice.\n6 Describe actions, not tribes.',
   'OyoEye Rules 4/4\n7 Help is free. Never pay.\n8 Respect privacy.',
 ];
+/** DRAFT — needs native-speaker review. The same 4 screens in Yoruba (each fits one SMS screen). */
+export const USSD_RULES_YO = [
+  'Òfin OyoEye 1/4\n1 Sọ òótọ́, bí ẹ ṣe rí i.\n2 SOS wà fún ewu tó ń ṣẹlẹ̀ báyìí.',
+  'Òfin OyoEye 2/4\n3 Ìròyìn èké ń fi ẹ̀mí wewu. Àṣìṣe òtítọ́ kò burú.\n4 Ààbò yín ló ṣáájú.',
+  'Òfin OyoEye 3/4\n5 Kò sí ìdájọ́ ọwọ́ ara ẹni.\n6 Ṣàpèjúwe ìwà, kì í ṣe ẹ̀yà.',
+  'Òfin OyoEye 4/4\n7 Ìrànlọ́wọ́ jẹ́ ọ̀fẹ́. Ẹ má sanwó.\n8 Bọ̀wọ̀ fún àṣírí ènìyàn.',
+];
 
 const PHONE = '0805 555 0199';
 const PAGE = 7;
 
 type Screen =
   | { k: 'idle' }
+  | { k: 'lang' }
   | { k: 'main' }
   | { k: 'etype' }
   | { k: 'ccat' }
@@ -35,25 +43,30 @@ type Screen =
   | { k: 'fpin'; phone: string }
   | { k: 'end'; text: string };
 
-const EMERGENCIES: { label: string; sub: string }[] = [
-  { label: 'Armed persons / shooting', sub: 'armed' },
-  { label: 'Kidnapping', sub: 'kidnapping' },
-  { label: 'Robbery / break-in', sub: 'robbery' },
-  { label: 'Fight / cult clash', sub: 'violence' },
-  { label: 'Fire', sub: 'fire' },
-  { label: 'Other emergency', sub: 'sos' },
+const EMERGENCIES: { label: string; yo: string; sub: string }[] = [
+  { label: 'Armed persons / shooting', yo: 'Olóhun ìjà / ìbọn', sub: 'armed' },
+  { label: 'Kidnapping', yo: 'Ìjínigbé', sub: 'kidnapping' },
+  { label: 'Robbery / break-in', yo: 'Olè jíjà / fífọ́ ilé', sub: 'robbery' },
+  { label: 'Fight / cult clash', yo: 'Ìjà / ìjà ẹgbẹ́ òkùnkùn', sub: 'violence' },
+  { label: 'Fire', yo: 'Iná', sub: 'fire' },
+  { label: 'Other emergency', yo: 'Pàjáwìrì míì', sub: 'sos' },
 ];
-const PROBLEMS: { label: string; cat: CategoryId }[] = [
-  { label: 'Road', cat: 'roads' },
-  { label: 'Waste / refuse', cat: 'waste' },
-  { label: 'Flooding / drainage', cat: 'flooding' },
-  { label: 'Light / water / pole', cat: 'infrastructure' },
-  { label: 'Other', cat: 'other' },
+const PROBLEMS: { label: string; yo: string; cat: CategoryId }[] = [
+  { label: 'Road', yo: 'Ọ̀nà', cat: 'roads' },
+  { label: 'Waste / refuse', yo: 'Pàǹtí', cat: 'waste' },
+  { label: 'Flooding / drainage', yo: 'Ìkún omi / ọ̀gbàrá', cat: 'flooding' },
+  { label: 'Light / water / pole', yo: 'Iná mànàmáná / omi / òpó', cat: 'infrastructure' },
+  { label: 'Other', yo: 'Òmíràn', cat: 'other' },
 ];
 
 export function Ussd() {
   const [screen, setScreen] = useState<Screen>({ k: 'idle' });
   const [input, setInput] = useState('');
+  // v2.5: the first screen offers English or Yorùbá; the whole session follows the choice.
+  const [lang, setLangU] = useState<Lang>('en');
+  const u = (k: Parameters<typeof ussdText>[0], p?: Record<string, string>) => ussdText(k, lang, p);
+  const rules = lang === 'yo' ? USSD_RULES_YO : USSD_RULES;
+  const lbl = (x: { label: string; yo: string }) => (lang === 'yo' ? x.yo : x.label);
   const [draft, setDraft] = useState<{ mode: 'e' | 'p'; label: string; sub?: string; cat?: CategoryId; lgaId?: string; area?: string; focalId?: string }>({ mode: 'e', label: '' });
   const lgas = dep.lgas;
 
@@ -61,40 +74,42 @@ export function Ussd() {
     switch (screen.k) {
       case 'idle':
         return 'Dial *615# and press Call';
+      case 'lang':
+        return u('lang');
       case 'main':
-        return 'OyoEye 615\nHelp is free. Never pay.\n1 Emergency now\n2 Report a problem\n3 Track report\n4 Community focal person\n5 Rules';
+        return u('main');
       case 'etype':
-        return 'Emergency:\n' + EMERGENCIES.map((e, k) => `${k + 1} ${e.label}`).join('\n') + '\n0 Back';
+        return `${u('emergency')}\n` + EMERGENCIES.map((e, k) => `${k + 1} ${lbl(e)}`).join('\n') + `\n${u('back')}`;
       case 'ccat':
-        return 'Problem:\n' + PROBLEMS.map((e, k) => `${k + 1} ${e.label}`).join('\n') + '\n0 Back';
+        return `${u('problem')}\n` + PROBLEMS.map((e, k) => `${k + 1} ${lbl(e)}`).join('\n') + `\n${u('back')}`;
       case 'lga': {
         const items = lgas.slice(screen.page * PAGE, screen.page * PAGE + PAGE);
         const more = (screen.page + 1) * PAGE < lgas.length;
-        return 'Local govt:\n' + items.map((l, k) => `${k + 1} ${l.name}`).join('\n') + (more ? '\n9 More' : '') + '\n0 Back';
+        return `${u('lga')}\n` + items.map((l, k) => `${k + 1} ${l.name}`).join('\n') + (more ? `\n${u('more')}` : '') + `\n${u('back')}`;
       }
       case 'area': {
         const l = lgas.find((x) => x.id === draft.lgaId)!;
-        return `${l.name} — area:\n` + l.areas.map((a, k) => `${k + 1} ${a}`).join('\n') + '\n0 Back';
+        return `${u('area', { lga: l.name })}\n` + l.areas.map((a, k) => `${k + 1} ${a}`).join('\n') + `\n${u('back')}`;
       }
       case 'confirm':
-        return `${draft.label}\n${draft.area}, ${lgas.find((x) => x.id === draft.lgaId)?.name}\n1 Send\n2 Cancel`;
+        return `${draft.label}\n${draft.area}, ${lgas.find((x) => x.id === draft.lgaId)?.name}\n${u('send')}`;
       case 'track':
-        return 'Enter report number\n(e.g. OY-SEC-…)';
+        return u('track');
       case 'tracked': {
         const i = getState().incidents.find((x) => x.id === screen.id);
         const closed = i && (i.status === 'closed' || i.status === 'referred');
-        return `${screen.ref}\nStatus: ${i ? statusLabel(i) : '—'}${closed && !feedbackFor(getState(), screen.ref) ? '\n1 Rate the response' : ''}\n0 Exit`;
+        return `${screen.ref}\n${u('status')} ${i ? statusLabel(i, lang) : '—'}${closed && !feedbackFor(getState(), screen.ref) ? `\n${u('rate')}` : ''}\n${u('exit')}`;
       }
       case 'rate1':
-        return 'Did anyone ask you for money?\n1 Yes\n2 No';
+        return u('rate1');
       case 'rate2':
-        return 'Were you treated with respect?\n1 Yes\n2 Somewhat\n3 No';
+        return u('rate2');
       case 'fphone':
-        return 'Community focal person\nEnter your phone number';
+        return u('fphone');
       case 'rules':
-        return `${USSD_RULES[screen.page]}\n${screen.page < USSD_RULES.length - 1 ? '1 Next\n' : ''}0 Exit`;
+        return `${rules[screen.page]}\n${screen.page < rules.length - 1 ? `${u('next')}\n` : ''}${u('exit')}`;
       case 'fpin':
-        return 'Enter your 4-digit PIN';
+        return u('fpin');
       case 'end':
         return screen.text;
     }
@@ -105,9 +120,13 @@ export function Ussd() {
     setInput('');
     switch (screen.k) {
       case 'idle':
-        if (v.replace(/\s/g, '') === '*615#') setScreen({ k: 'main' });
+        if (v.replace(/\s/g, '') === '*615#') setScreen({ k: 'lang' });
         else setScreen({ k: 'end', text: 'Invalid MMI code.\nDial *615#' });
         return;
+      case 'lang':
+        if (v !== '1' && v !== '2') return;
+        setLangU(v === '2' ? 'yo' : 'en');
+        return setScreen({ k: 'main' });
       case 'main':
         if (v === '1') return (setDraft({ mode: 'e', label: '' }), setScreen({ k: 'etype' }));
         if (v === '2') return (setDraft({ mode: 'p', label: '' }), setScreen({ k: 'ccat' }));
@@ -119,14 +138,14 @@ export function Ussd() {
         if (v === '0') return setScreen({ k: 'main' });
         const e = EMERGENCIES[Number(v) - 1];
         if (!e) return;
-        setDraft({ ...draft, mode: 'e', label: e.label, sub: e.sub });
+        setDraft({ ...draft, mode: 'e', label: lbl(e), sub: e.sub });
         return setScreen({ k: 'lga', page: 0 });
       }
       case 'ccat': {
         if (v === '0') return setScreen({ k: 'main' });
         const p = PROBLEMS[Number(v) - 1];
         if (!p) return;
-        setDraft({ mode: 'p', label: p.label, cat: p.cat });
+        setDraft({ mode: 'p', label: lbl(p), cat: p.cat });
         return setScreen({ k: 'lga', page: 0 });
       }
       case 'lga': {
@@ -146,13 +165,13 @@ export function Ussd() {
         return setScreen({ k: 'confirm' });
       }
       case 'confirm': {
-        if (v === '2') return setScreen({ k: 'end', text: 'Cancelled.' });
+        if (v === '2') return setScreen({ k: 'end', text: u('cancelled') });
         if (v !== '1') return;
         const fire = draft.sub === 'fire';
         const res = submitReport(
           draft.mode === 'e'
             ? {
-                text: `USSD emergency: ${draft.label} at ${draft.area}`,
+                text: `USSD emergency: ${EMERGENCIES.find((e) => e.sub === draft.sub)?.label ?? draft.label} at ${draft.area}`,
                 category: fire ? 'fire' : 'security',
                 subcategory: fire ? 'building' : draft.sub,
                 sos: !fire && draft.sub === 'sos',
@@ -162,25 +181,26 @@ export function Ussd() {
                 channel: 'ussd',
                 reporter: draft.focalId ? { personId: draft.focalId, name: dep.people.find((x) => x.id === draft.focalId)?.name, phone: dep.people.find((x) => x.id === draft.focalId)?.phone } : { phone: PHONE },
                 focal: draft.focalId ? { how: 'saw' } : undefined,
+                lang,
               }
-            : { text: `USSD report: ${draft.label} problem at ${draft.area}`, category: draft.cat === 'other' ? undefined : draft.cat, lgaId: draft.lgaId!, area: draft.area!, identity: 'standard', channel: 'ussd', reporter: { phone: PHONE } },
+            : { text: `USSD report: ${PROBLEMS.find((p) => p.cat === draft.cat)?.label ?? draft.label} problem at ${draft.area}`, category: draft.cat === 'other' ? undefined : draft.cat, lgaId: draft.lgaId!, area: draft.area!, identity: 'standard', channel: 'ussd', reporter: { phone: PHONE }, lang },
         );
-        return setScreen({ k: 'end', text: draft.mode === 'e' ? `Ref ${res.ref}\nHelp is coming.\nDo not reply.` : `Ref ${res.ref}\nReport received.\nKeep this number.` });
+        return setScreen({ k: 'end', text: u(draft.mode === 'e' ? 'sentE' : 'sentP', { ref: res.ref }) });
       }
       case 'fphone':
         return setScreen({ k: 'fpin', phone: v });
       case 'rules':
-        if (v === '1' && screen.page < USSD_RULES.length - 1) return setScreen({ k: 'rules', page: screen.page + 1 });
-        return setScreen({ k: 'end', text: 'Thank you for keeping Oyo safe.' });
+        if (v === '1' && screen.page < rules.length - 1) return setScreen({ k: 'rules', page: screen.page + 1 });
+        return setScreen({ k: 'end', text: u('rulesEnd') });
       case 'fpin': {
         const f = findFocalByPhone(screen.phone);
-        if (!f || f.staffStatus !== 'active' || v !== (f.pin ?? '1234')) return setScreen({ k: 'end', text: 'Phone or PIN not recognised.' });
+        if (!f || f.staffStatus !== 'active' || v !== (f.pin ?? '1234')) return setScreen({ k: 'end', text: u('badpin') });
         setDraft({ mode: 'e', label: '', focalId: f.id });
         return setScreen({ k: 'etype' });
       }
       case 'tracked':
         if (v === '1') return setScreen({ k: 'rate1', ref: screen.ref, id: screen.id });
-        return setScreen({ k: 'end', text: 'Thank you.' });
+        return setScreen({ k: 'end', text: u('thanks') });
       case 'rate1':
         if (v !== '1' && v !== '2') return;
         return setScreen({ k: 'rate2', ref: screen.ref, id: screen.id, money: v === '1' });
@@ -188,14 +208,15 @@ export function Ussd() {
         const respect = v === '1' ? 'yes' : v === '2' ? 'somewhat' : v === '3' ? 'no' : undefined;
         if (!respect) return;
         const err = conduct.answer(screen.id, screen.ref, { money: screen.money, respect }, 'ussd');
-        return setScreen({ k: 'end', text: err ?? 'Thank you.\nHelp is free.\nNever pay.' });
+        return setScreen({ k: 'end', text: err ?? u('rated') });
       }
       case 'track': {
         const i = incidentByRef(v);
         if (i) return setScreen({ k: 'tracked', ref: i.reports.find((r) => r.ref === v.trim().toUpperCase())?.ref ?? i.ref, id: i.id });
-        return setScreen({ k: 'end', text: 'Report not found.' });
+        return setScreen({ k: 'end', text: u('notfound') });
       }
       case 'end':
+        setLangU('en');
         return setScreen({ k: 'idle' });
     }
   };
@@ -217,7 +238,7 @@ export function Ussd() {
           <span>MTN NG</span>
           <span>▮▮▮▯ 12:00</span>
         </div>
-        <pre className="fp-screen" aria-live="polite">
+        <pre className="fp-screen" aria-live="polite" lang={lang}>
           {text()}
         </pre>
         <form
@@ -232,7 +253,7 @@ export function Ussd() {
         </form>
         <div className="fp-keys">
           {['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'].map((k) => (
-            <button key={k} type="button" onClick={() => setInput((x) => x + k)}>
+            <button key={k} type="button" onClick={() => setInput((x) => x + k)} aria-label={`Key ${k}`}>
               {k}
             </button>
           ))}

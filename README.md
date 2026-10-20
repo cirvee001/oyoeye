@@ -92,11 +92,17 @@ Press **Reset demo** first. Every step shows up in the receiver's inbox (bell) a
 on the case timeline.
 
 1. **Anonymous SOS.** On the sign-in screen press **Report an emergency now — no
-   sign-in**. Choose *Security*, set *Ibadan North → Agbowo*, and **hold the SOS
-   button for 3 seconds**. Note the reference. Footer → **Track a report** with it:
-   *Pending review*.
-2. **615 Operator (OY-615-001).** The SOS is the first row on *Cases → Pending review*.
-   Press **View**: the Credibility card sits next to the Reporter card. **Verify & pass to unit** → *Police
+   sign-in**. Choose *Security*. The location is captured in the background — after about 1 s it
+   shows **Agbowo · Ibadan North** (Demo controls → *Simulate my location*, on by default, so the
+   presenter's real location never appears). **Hold the SOS button for 2 seconds** (or "press once
+   and confirm"). Note the reference. Footer → **Track a report** with it: *Pending review*, with
+   "Pending review — the 615 control room will check your report soon".
+2. **615 Operator (OY-615-001).** The SOS arrives with a **two-tone chime**, a toast "SOS — Agbowo,
+   Ibadan North · Open", the tab title "(1) SOS — OyoEye", and a **flashing red row** first on
+   *Cases → Pending review*. The chime repeats every 30 s until someone opens it. Press **View**:
+   the sound stops (for every operator), the row is no longer tinted. The speaker in the top bar has
+   **Mute for 15 min** (audited); if the browser blocked sound, click the "Click to enable alert
+   sound" chip. On the case: the Credibility card sits next to the Reporter card. **Verify & pass to unit** → *Police
    Bodija* (reason "Covers this area" is preselected). Status goes *Verified* →
    *Assigned* with **Handoff pending → Police Bodija**.
 3. **Unit Commander (OY-POL-014).** Bell → the handoff (or *Cases → To accept*). Open
@@ -119,7 +125,9 @@ on the case timeline.
    reason is on the timeline and in the Commander's inbox.
 8. **Civic loop.** Sign in as **Adewale** (0803 000 0001, code 123456) → *Report a
    problem* → leave the category or pick *Not sure*, type "Panti ti po ju ni
-   Mokola", **Use sample photo** → *Ibadan North → Mokola* → *Standard* → Send.
+   Mokola", **Use sample photo** → **Use my location** (Agbowo after 1 s) → **drag the pin** on
+   the map to Mokola: the chip changes to *Mokola · Ibadan North* → type the landmark
+   "opposite Mokola roundabout" (required; "I don't know" is allowed) → *Standard* → Send.
    It is classified **Waste → Waste Authority** and passed to Tunde. As **Tunde
    (OY-WST-031)**: **Accept** → **Start work** → **Mark resolved** without a photo
    (refused) → add a photo (*Use sample photo*) → resolve. As Adewale: bell / *My
@@ -169,8 +177,13 @@ messages. Normal messages only raise the Chat unread count; urgent messages, bro
 
 ### Map, community, conduct and officer safety (steps 17–23, PRD v2.3)
 
-17. **Map.** Duty lead → *Cases* → **Map** (next to the search box). Incidents are on; turn on
+17. **Map.** Duty lead → *Cases* → **Map** (next to the search box). It opens on all of Oyo; the
+    **Legend** (bottom-left; a button on phones) lists only the layers that are on — status colours,
+    shapes (SOS ringed circle, Officer SOS triangle, Restricted grey square), stations P/A/F/G,
+    officers (dot / arrow / dot in a ring). Turn on
     **Hotspots** (Moniya, Ojoo and Igangan clusters — choose *30 days*) and **Station coverage**.
+    Sign in as CSP Lawal: his map opens on **Police Bodija coverage**; **Whole state** zooms out,
+    **Reset view** comes back (the last view is remembered per user per page).
     For Grace's en-route marker: as Comdr. Adegoke, *Cases → Accepted* → the Iroko case → *Assign
     officer* → Grace; as Grace, *Accept* → *En route*; as the duty lead press **+15m** and watch
     her marker move. The Governor's Overview has the **Security map** card.
@@ -212,8 +225,10 @@ messages. Normal messages only raise the Chat unread count; urgent messages, bro
     standing card, the Rule Book card and "In your area this week" (public figures only). Narrow the
     window below 1024 px (try 375 px): the phone layout with bottom tabs no wider than 640 px.
 25. **New citizen onboarding.** Sign out → Citizen tab → **0803 000 0500**, code 123456, first name
-    "Kunle" → 4 onboarding cards → the 8 rules → **I understand and agree** → Home with the **New**
-    standing. The audit log shows "Accepted Rule Book v1". (The red "In danger now? SOS" button is
+    "Kunle" → switch to **YO** in the top-right during onboarding → 4 onboarding cards → the 8 rules →
+    **Mo yé mi, mo sì gbà** → Home stays in Yorùbá with the **Tuntun** (New) standing. Report
+    something with *Standard* identity: the confirmation SMS in the outbox is in Yorùbá ("OyoEye
+    OY-…: A ti gba ìròyìn yín…"). Sign out and in again: still YO. The audit log shows "Accepted Rule Book v1". (The red "In danger now? SOS" button is
     on every onboarding screen — onboarding never blocks SOS.)
 26. **Anonymous summary.** Signed out → "Report a problem anonymously": the 3-rule summary, then
     the report flow (once per browser session). Then "Report an emergency now" → hold SOS: no rules
@@ -228,6 +243,38 @@ messages. Normal messages only raise the Chat unread count; urgent messages, bro
     first asks **Have you called back?** (Yes / Couldn't reach). Barr. Adeyemi → *Complaints* → the
     "Standing appeal" → **Uphold appeal**: the hoax marks are removed (audited) and Bose's standing
     recalculates. Bose's SOS is always answered, whatever her standing.
+
+### Flow polish (PRD v2.5) — no new features
+
+- **Alert sound and flash (§1).** Web Audio chimes, no audio files: SOS / Officer SOS two-tone,
+  Critical one softer tone, repeating every 30 s until the case is opened (one operator opening it
+  stops it for all operators) or it leaves *Pending review*. Who hears what: operator and duty lead
+  (SOS, Officer SOS, new Critical), unit commanders (Officer SOS for their unit or one they are
+  asked to help; a Critical handoff to their unit), field officers ("OFFICER NEEDS HELP — GO?" for
+  their unit). New rows flash for 10 s, then stay tinted until opened. Speaker in the top bar:
+  on by default, **Mute for 15 min** / **Unmute**, remembered per user, audited.
+- **Location first (§2).** Citizen report, focal-person report, SOS screen and 615 intake use the
+  live map with a **draggable pin**; LGA and area fill in from the nearest area and show as an
+  editable chip; the landmark field is under the map (required for non-SOS, "I don't know" allowed).
+  Denied → the lists plus tap-the-map; outside Oyo → "Choose the place you're reporting about" (a
+  case is never filed outside Oyo). SOS captures location in the background and sends after at
+  most 5 s with "Location unknown — operator will call"; the caller can add their area afterwards.
+  **Demo controls → Simulate my location**: Off · Agbowo (default) · Igangan · Moniya · Ogbomoso.
+- **One hold time (§3).** Citizen SOS and Officer SOS both 2 s, same ring, `navigator.vibrate`
+  where supported; "press once and confirm" stays for both.
+- **Map (§4).** Legend, role-based starting view (commander → station coverage, officer → own
+  position ~3 km, chairman → LGA, focal person → community ~2 km, case page → incident ~1.5 km,
+  everyone else → all of Oyo), **Whole state** and **Reset view**, shapes as well as colours.
+- **Yorùbá everywhere a citizen looks (§5).** Remembered on the person (citizens and focal
+  persons) and on the device (guests). Toggle in the top bar of every citizen screen and on the
+  sign-in page. SMS and inbox messages store a template key and render in the reader's language;
+  USSD starts with "1 English 2 Yorùbá". Staff screens stay English. Demo controls show
+  **Missing translations: 0**. Every Yoruba string is a draft for native-speaker review
+  (`src/strings.ts`).
+- **Accessibility (§6).** 48 px tap targets on phone screens, a 2 px focus ring, sheets trap focus
+  and close on Esc, menus work with the arrow keys, aria-labels on icon-only buttons, polite toasts
+  and assertive SOS announcements, text labels and in-text errors on forms, AA contrast for status
+  pills and grey text, and `prefers-reduced-motion` (no pulses, markers jump, no slide-ins).
 
 Seeded on reset: a pending SOS (Olodo), the step-6 armed case passed to Grace, the
 step-7 Sango case, a handoff waiting at Police Mapo, an unclassified report waiting
@@ -256,7 +303,7 @@ Backup requested, Handoff pending.
 | --- | --- |
 | Routing matrix (most specific rule wins, coverage-based targets) | AI triage (keyword rules; English, Yoruba, Pidgin) |
 | Handoffs with accept/decline, SLA clocks, escalation ladder | OTP, SMS, WhatsApp, push (written to an outbox) |
-| Duty roster: on-duty people first, then the next role up | Maps (schematic SVG) and GPS |
+| Duty roster: on-duty people first, then the next role up | GPS ("Simulate my location" in Demo controls); map tiles from OpenStreetMap |
 | Duplicate merging; corroboration by distinct reporters | Voice notes, USSD, 615 telephony |
 | Evidence before resolve; citizen confirmation and reopen | Database (`localStorage`) |
 | Role-based access, sealed/anonymous identities, break-glass | |
@@ -271,8 +318,12 @@ Backup requested, Handoff pending.
 - `src/store.ts` — state and every action (each writes to the audit chain),
   handoffs, per-user inbox, sign-in, duty roster
 - `src/seed.ts` — builds history by running the real actions at past times
-- `src/i18n.ts` — status labels/colours and EN/YO strings (Yoruba is a draft
-  translation and must be reviewed)
+- `src/strings.ts` — every EN/YO string, citizen message templates and USSD screens (Yoruba is a
+  draft translation and must be reviewed); `src/i18n.ts` — status labels/colours, the Rule Book,
+  `useLang`
+- `src/alerts.ts` + `src/sound.ts` — who hears which alert, repeat/stop, Web Audio chimes
+- `src/geo.ts` — "Use my location", nearest area, outside-Oyo check, simulated points
+- `src/mapdata.ts` — map data with the privacy rules, legend and starting views
 - `src/roles.ts` — role shapes, the per-role sidebar menus (max 5) and landing pages
 - `src/views/` — SignIn (+ Activate), Overview, Cases (work list), Chat (station group chat), Stations (admin stations & staff, rules), CaseView (header actions, stepper,
   details, Pass case modal, timeline), Officers, Reports, Inbox, Profile, Citizen (home,

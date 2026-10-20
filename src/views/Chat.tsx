@@ -374,7 +374,7 @@ function Composer({ channel }: { channel: ChatChannel }) {
         placeholder={urgent ? 'Urgent message to everyone on duty…' : 'Type a message (use @name to mention)'}
         aria-label="Message"
       />
-      <button className={`icon-btn urgent-t${urgent ? ' on' : ''}`} onClick={() => setUrgent(!urgent)} title="Urgent: push to everyone on duty and SMS the commander" aria-pressed={urgent}>
+      <button className={`icon-btn urgent-t${urgent ? ' on' : ''}`} onClick={() => setUrgent(!urgent)} title="Urgent: push to everyone on duty and SMS the commander" aria-label="Urgent message" aria-pressed={urgent}>
         <Icon name="urgent" size={20} />
       </button>
       {text.trim() ? (

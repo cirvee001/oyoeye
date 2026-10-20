@@ -2,9 +2,13 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { canOpen } from './platform/engine';
 import type { Person } from './platform/types';
 import { LANDING, MENUS, initials, roleKind, roleName } from './roles';
-import { advanceClock, chatUnread, dep, incidentByRef, needsOnboarding, publishRulebook, now, persona, resetDemo, setDuty, signIn, signOut, signedIn, tick, useStore } from './store';
+import { advanceClock, chatUnread, dep, incidentByRef, needsOnboarding, publishRulebook, now, persona, resetDemo, setDuty, setSimLocation, signIn, signOut, signedIn, tick, useStore } from './store';
+import { missingTranslations, useLang, type StrKey } from './i18n';
+import { SIM_LOCATIONS, type SimId } from './geo';
+import { AlertCenter, SpeakerControl } from './views/Alerts';
+import { unlockAudio } from './sound';
 import { CaseView } from './views/CaseView';
-import { CitizenHome, Emergency, Misconduct, MyReports, ReportFlow, Track } from './views/Citizen';
+import { CitizenHome, Emergency, LangToggle, Misconduct, MyReports, ReportFlow, Track } from './views/Citizen';
 import { ChairCommunity, FocalHome, HelpBanner, MyCommunity } from './views/Community';
 import { ComplaintPage, Complaints, UnsealReviews } from './views/Oversight';
 import { CheckInPrompt, OfficerSosButton, silentSos } from './views/Safety';
@@ -84,8 +88,25 @@ const TITLE: Record<string, string> = {
   track: 'Track a report',
 };
 
+/** Page titles a citizen or focal person sees, in their language. */
+const CITIZEN_TITLE: Record<string, StrKey> = {
+  home: 'nav.home',
+  report: 'title.report',
+  my: 'nav.my',
+  rules: 'nav.rules',
+  inbox: 'nav.inbox',
+  mycommunity: 'nav.community',
+  chat: 'nav.chat',
+  profile: 'nav.profile',
+  sos: 'title.sos',
+  emergency: 'title.sos',
+  track: 'title.track',
+  misconduct: 'title.misconduct',
+};
+
 export function App() {
   const route = useRoute();
+  const [, t] = useLang();
   const s = useStore((x) => x);
   const me = persona();
   const authed = signedIn();
@@ -101,7 +122,28 @@ export function App() {
       }
     };
     document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
+    // Menus work from the keyboard: arrow keys move between items, Esc closes (PRD v2.5 §6).
+    const keys = (e: KeyboardEvent) => {
+      const open = document.querySelector<HTMLDetailsElement>('details[open]');
+      if (!open) return;
+      if (e.key === 'Escape') {
+        open.open = false;
+        open.querySelector<HTMLElement>('summary')?.focus();
+        return;
+      }
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const items = [...open.querySelectorAll<HTMLElement>('.menu-item')];
+      if (!items.length) return;
+      e.preventDefault();
+      const k = items.indexOf(document.activeElement as HTMLElement);
+      const next = e.key === 'ArrowDown' ? (k + 1) % items.length : (k <= 0 ? items.length : k) - 1;
+      items[next].focus();
+    };
+    document.addEventListener('keydown', keys);
+    return () => {
+      document.removeEventListener('click', close);
+      document.removeEventListener('keydown', keys);
+    };
   }, []);
 
   useEffect(() => {
@@ -159,13 +201,14 @@ export function App() {
               <Eye size={30} /> <b>OyoEye</b>
             </a>
             <div className="spacer" />
+            {head !== 'ussd' && head !== 'public' && <LangToggle />}
             <a className="btn sm" href="#/signin">
-              Sign in
+              {t('nav.signin')}
             </a>
           </header>
         )}
         {!bare && head !== 'public' && head !== 'ussd' && <HelpBanner />}
-        <main className={bare ? '' : 'page'} key={route}>
+        <main id="main" className={bare ? '' : 'page'} key={route}>
           {page}
         </main>
         {demo}
@@ -252,31 +295,31 @@ export function App() {
     const desktop =
       kind === 'citizen'
         ? [
-            { path: '/home', label: 'Home', icon: 'home', n: 0 },
-            { path: '/report', label: 'Report', icon: 'plus', n: 0 },
-            { path: '/my', label: 'My reports', icon: 'list', n: 0 },
-            { path: '/rules', label: 'Rule book', icon: 'file', n: 0 },
-            { path: '/inbox', label: 'Inbox', icon: 'inbox', n: unread },
+            { path: '/home', label: t('nav.home'), icon: 'home', n: 0 },
+            { path: '/report', label: t('nav.report'), icon: 'plus', n: 0 },
+            { path: '/my', label: t('nav.my'), icon: 'list', n: 0 },
+            { path: '/rules', label: t('nav.rules'), icon: 'file', n: 0 },
+            { path: '/inbox', label: t('nav.inbox'), icon: 'inbox', n: unread },
           ]
         : [
-            { path: '/home', label: 'Home', icon: 'home', n: 0 },
-            { path: '/report', label: 'Report', icon: 'plus', n: 0 },
-            { path: '/mycommunity', label: 'My community', icon: 'officers', n: 0 },
-            { path: '/chat', label: 'Chat', icon: 'chat', n: chatN },
-            { path: '/inbox', label: 'Inbox', icon: 'inbox', n: unread },
+            { path: '/home', label: t('nav.home'), icon: 'home', n: 0 },
+            { path: '/report', label: t('nav.report'), icon: 'plus', n: 0 },
+            { path: '/mycommunity', label: t('nav.community'), icon: 'officers', n: 0 },
+            { path: '/chat', label: t('nav.chat'), icon: 'chat', n: chatN },
+            { path: '/inbox', label: t('nav.inbox'), icon: 'inbox', n: unread },
           ];
     return (
-      <Shell me={me} menu={desktop} path={path} title={TITLE[h2] ?? 'OyoEye'} citizen>
+      <Shell me={me} menu={desktop} path={path} title={CITIZEN_TITLE[h2] ? t(CITIZEN_TITLE[h2]) : TITLE[h2] ?? 'OyoEye'} citizen>
         <HelpBanner />
-        <main className="page" key={path + me.id}>
+        <main id="main" tabIndex={-1} className="page" key={path + me.id}>
           {page}
         </main>
-        <nav className="bottom-nav">
+        <nav className="bottom-nav" aria-label={t('nav.home')}>
           {desktop.map((n) => (
-            <a key={n.path} href={`#${n.path}`} className={path.startsWith(n.path) ? 'on' : ''}>
+            <a key={n.path} href={`#${n.path}`} className={path.startsWith(n.path) ? 'on' : ''} aria-current={path.startsWith(n.path) ? 'page' : undefined}>
               <Icon name={n.icon} size={22} />
               <span>
-                {n.path === '/rules' ? 'Rules' : n.label}
+                {n.path === '/rules' ? t('nav.rules.short') : n.label}
                 {n.n > 0 && <span className="bn-count">{n.n}</span>}
               </span>
             </a>
@@ -299,7 +342,8 @@ export function App() {
     return (
       <div className="app mobile">
         <TopBar me={me} title="OyoEye Field" mobile />
-        <main className="page" key={path + me.id}>
+        <AlertCenter me={me} />
+        <main id="main" tabIndex={-1} className="page" key={path + me.id}>
           {page}
         </main>
         <CheckInPrompt />
@@ -308,7 +352,7 @@ export function App() {
             <OfficerSosButton compact />
           </div>
           {tabs.map((n) => (
-            <a key={n.path} href={`#${n.path}`} className={path.startsWith(n.path) ? 'on' : ''}>
+            <a key={n.path} href={`#${n.path}`} className={path.startsWith(n.path) ? 'on' : ''} aria-current={path.startsWith(n.path) ? 'page' : undefined}>
               <Icon name={n.icon} size={22} />
               <span>
                 {n.label}
@@ -333,7 +377,8 @@ export function App() {
   const newComplaints = kind === 'oversight' ? s.complaints.filter((c) => c.status === 'new').length : 0;
   return (
     <Shell me={me} menu={menu.map((m) => ({ ...m, n: m.count === 'cases' ? caseCount : m.count === 'inbox' ? unread : m.count === 'chat' ? chatN : m.count === 'complaints' ? newComplaints : 0 }))} path={path} title={TITLE[h2] ?? 'OyoEye'}>
-      <main className="page" key={path + me.id}>
+      <AlertCenter me={me} />
+      <main id="main" tabIndex={-1} className="page" key={path + me.id}>
         {page}
       </main>
       {demo}
@@ -348,6 +393,7 @@ function NoAccess() {
 }
 
 function Shell({ me, menu, path, title, children, citizen }: { me: Person; menu: { path: string; label: string; icon: string; n: number }[]; path: string; title: string; children: ReactNode; citizen?: boolean }) {
+  const [, t] = useLang();
   const [drawer, setDrawer] = useState(false);
   useEffect(() => {
     const close = () => setDrawer(false);
@@ -356,6 +402,9 @@ function Shell({ me, menu, path, title, children, citizen }: { me: Person; menu:
   }, []);
   return (
     <div className={`shell${drawer ? ' drawer-open' : ''}${citizen ? ' citizen-shell' : ''}`}>
+      <a className="skip-link" href="#main" onClick={(e) => (e.preventDefault(), document.getElementById('main')?.focus())}>
+        {t('nav.skip')}
+      </a>
       <div className="scrim-drawer" onClick={() => setDrawer(false)} />
       <aside className="sidebar">
         <a className="sb-logo" href="#/">
@@ -365,9 +414,9 @@ function Shell({ me, menu, path, title, children, citizen }: { me: Person; menu:
             <small>{dep.state} State</small>
           </span>
         </a>
-        <nav className="sb-nav">
+        <nav className="sb-nav" aria-label="Main menu">
           {menu.map((m) => (
-            <a key={m.path} href={`#${m.path}`} className={path === m.path || path.startsWith(m.path + '/') || (m.path === '/cases' && path.startsWith('/case/')) ? 'on' : ''} title={m.label}>
+            <a key={m.path} href={`#${m.path}`} className={path === m.path || path.startsWith(m.path + '/') || (m.path === '/cases' && path.startsWith('/case/')) ? 'on' : ''} title={m.label} aria-current={path === m.path ? 'page' : undefined}>
               <Icon name={m.icon} size={20} />
               <span className="sb-text">{m.label}</span>
               {m.n > 0 && <span className="sb-count">{m.n > 99 ? '99+' : m.n}</span>}
@@ -380,10 +429,11 @@ function Shell({ me, menu, path, title, children, citizen }: { me: Person; menu:
             signOut();
             go('/signin');
           }}
-          title="Sign out"
+          title={t('nav.signout')}
+          aria-label={t('nav.signout')}
         >
           <Icon name="logout" size={20} />
-          <span className="sb-text">Sign out</span>
+          <span className="sb-text">{t('nav.signout')}</span>
         </button>
       </aside>
       <div className="shell-main">
@@ -395,7 +445,9 @@ function Shell({ me, menu, path, title, children, citizen }: { me: Person; menu:
 }
 
 function TopBar({ me, title, mobile, onMenu }: { me: Person; title: string; mobile?: boolean; onMenu?: () => void }) {
-  const staff = me.role !== 'citizen';
+  const [, t] = useLang();
+  const staff = me.role !== 'citizen' && me.role !== 'focal';
+  const resident = me.role === 'citizen' || me.role === 'focal';
   const on = useStore((s) => s.duty[me.id]?.on ?? true);
   const [q, setQ] = useState('');
   const taps = useRef<number[]>([]);
@@ -419,6 +471,7 @@ function TopBar({ me, title, mobile, onMenu }: { me: Person; title: string; mobi
         <a
           href="#/"
           className="brand-sm"
+          aria-label="OyoEye home"
           onClick={(e) => {
             if (me.role !== 'officer') return;
             const t = performance.now();
@@ -441,6 +494,8 @@ function TopBar({ me, title, mobile, onMenu }: { me: Person; title: string; mobi
         </form>
       )}
       <div className="spacer" />
+      {resident && <LangToggle />}
+      <SpeakerControl me={me} />
       {staff && (
         <label className={`switch duty${on ? ' on' : ''}`} title="Your on-duty status. New cases and escalations go to on-duty staff first.">
           <input type="checkbox" checked={on} onChange={(e) => setDuty(me.id, e.target.checked)} />
@@ -449,36 +504,37 @@ function TopBar({ me, title, mobile, onMenu }: { me: Person; title: string; mobi
       )}
       <Bell />
       <details className="avatar-menu">
-        <summary>
+        <summary aria-label={`${t('nav.menu')}: ${me.name}`} aria-haspopup="menu">
           <span className="avatar">{initials(me.name)}</span>
           <span className="who">
             <b>{me.name}</b>
-            <small>{roleName(me)}</small>
+            <small>{me.role === 'citizen' ? t('role.citizen') : me.role === 'focal' ? t('role.focal') : roleName(me)}</small>
           </span>
           <Icon name="down" size={16} />
         </summary>
-        <div className="am-menu">
-          <a className="menu-item" href="#/profile">
-            <Icon name="user" size={16} /> Profile
+        <div className="am-menu" role="menu">
+          <a className="menu-item" role="menuitem" href="#/profile">
+            <Icon name="user" size={16} /> {t('nav.profile')}
           </a>
-          {(me.role === 'citizen' || me.role === 'focal') && (
-            <a className="menu-item" href="#/rules">
-              <Icon name="file" size={16} /> Rule book
+          {resident && (
+            <a className="menu-item" role="menuitem" href="#/rules">
+              <Icon name="file" size={16} /> {t('nav.rules')}
             </a>
           )}
           {me.role === 'officer' && (
-            <button className="menu-item" onClick={() => silentSos()}>
+            <button className="menu-item" role="menuitem" onClick={() => silentSos()}>
               <Icon name="sos" size={16} /> Silent SOS
             </button>
           )}
           <button
             className="menu-item danger"
+            role="menuitem"
             onClick={() => {
               signOut();
               go('/signin');
             }}
           >
-            <Icon name="logout" size={16} /> Sign out
+            <Icon name="logout" size={16} /> {t('nav.signout')}
           </button>
         </div>
       </details>
@@ -489,6 +545,8 @@ function TopBar({ me, title, mobile, onMenu }: { me: Person; title: string; mobi
 function DemoControls({ onSwitch }: { onSwitch: () => void }) {
   const [open, setOpen] = useState(false);
   useStore((s) => s.clockOffset);
+  const sim = useStore((s) => s.simLocation);
+  const missing = missingTranslations().length;
   return (
     <div className={`demo-pill${open ? ' open' : ''}`}>
       {open && (
@@ -511,7 +569,20 @@ function DemoControls({ onSwitch }: { onSwitch: () => void }) {
               +6h
             </button>
           </div>
-          <button className="btn sm block" onClick={onSwitch}>
+          <label className="field demo-sim">
+            <span className="small">Simulate my location</span>
+            <select className="input" value={sim} onChange={(e) => setSimLocation(e.target.value as SimId)} title="“Use my location” returns this point after 1 s, so the presenter's real location never appears">
+              {SIM_LOCATIONS.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="small">
+            Missing translations: <b className={missing ? 'bad' : 'good'}>{missing}</b> <span className="tiny muted">(Yorùbá drafts — native review needed)</span>
+          </div>
+          <button className="btn sm block" onClick={() => (unlockAudio(), onSwitch())}>
             Switch account <kbd>Ctrl+Shift+S</kbd>
           </button>
           <a className="btn sm block" href="#/outbox" onClick={() => setOpen(false)}>
@@ -534,7 +605,7 @@ function DemoControls({ onSwitch }: { onSwitch: () => void }) {
           {/* <span className="tiny muted">{getState().audit.length.toLocaleString()} audit entries · prototype, fictional data</span> */}
         </div>
       )}
-      <button className="pill-btn" onClick={() => setOpen(!open)} aria-expanded={open}>
+      <button className="pill-btn" onClick={() => (unlockAudio(), setOpen(!open))} aria-expanded={open}>
         {open ? 'Close' : 'Demo controls'}
       </button>
     </div>

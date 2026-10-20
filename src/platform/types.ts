@@ -1,3 +1,4 @@
+import type { Msg } from '../strings';
 // Platform types. Nothing in this file is specific to one state:
 // a deployment (see src/deployments) supplies the LGAs, agencies,
 // people, routing matrix and SLAs.
@@ -161,6 +162,8 @@ export interface Person {
   rulebookAcceptedAt?: number;
   /** Last Rule Book version whose "what's new" notice was shown. */
   rulebookSeenVersion?: number;
+  /** v2.5: citizen / focal person language choice (staff screens stay English). */
+  language?: 'en' | 'yo';
   demo?: boolean;
   /** Seeded track record, used as a credibility signal only. */
   history?: { reports: number; confirmed: number; false: number };
@@ -272,6 +275,8 @@ export interface Report {
   callRef?: string;
   /** Report made by a community focal person (v2.3 §3.1). */
   focal?: { how: 'saw' | 'told' | 'at_scene'; atRisk?: number; canAssist?: boolean };
+  /** v2.5: the reporter's language when they reported (SMS replies use it). */
+  lang?: 'en' | 'yo';
 }
 
 export interface Evidence {
@@ -358,7 +363,9 @@ export interface Incident {
   outcome?: string;
   evidence: Evidence[];
   reports: Report[];
-  updates: { at: number; text: string }[]; // citizen-facing, plain language
+  updates: { at: number; text: string; msg?: Msg }[]; // citizen-facing, plain language (msg renders in the reader's language)
+  /** v2.5: SOS sent before any location arrived — the operator calls back. */
+  locationUnknown?: boolean;
   verification?: 'yes' | 'no' | 'partial' | 'timeout';
   reopenCount: number;
   ai: Triage;
@@ -398,6 +405,8 @@ export interface AuditEntry {
 
 export interface OutboundMessage {
   id: string;
+  /** v2.5: language the text was rendered in. */
+  lang?: 'en' | 'yo';
   at: number;
   channel: 'whatsapp' | 'sms' | 'push';
   to: string;
@@ -423,6 +432,8 @@ export interface Notice {
   sosAgencyId?: string;
   channelId?: string;
   read: boolean;
+  /** v2.5: template key + values, so citizens read it in their language. */
+  msg?: Msg;
 }
 
 /** An officer moving from one station to another; the receiving commander accepts (like a case handoff). */

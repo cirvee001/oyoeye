@@ -1,7 +1,8 @@
 import { DAY, dur, median } from '../platform/engine';
 import { agency, checkInDue, conductScore, dep, persona, safety, useStore } from '../store';
 import { Card, Icon, StatCard, go, hhmm, run, useNow } from '../ui';
-import { HoldButton } from './Citizen';
+import { useState } from 'react';
+import { HoldButton, SOS_HOLD_MS } from './Citizen';
 
 /** Officer SOS: hold 2 s. This is an alert from a verified officer, so units are alerted at once. */
 export function OfficerSosButton({ compact }: { compact?: boolean }) {
@@ -25,9 +26,32 @@ export function OfficerSosButton({ compact }: { compact?: boolean }) {
       </div>
     );
   }
+  const fire = () => run(safety.sos(false), 'OFFICER SOS sent. The nearest units, your commander and the duty lead have been alerted.');
   return (
     <div className={`officer-sos${compact ? ' compact' : ''}`}>
-      <HoldButton ms={2000} label="Hold 2 s for Officer SOS" holding="Keep holding…" text="SOS" small={compact} onDone={() => run(safety.sos(false), 'OFFICER SOS sent. The nearest units, your commander and the duty lead have been alerted.')} />
+      <HoldButton ms={SOS_HOLD_MS} label="Hold 2 s for Officer SOS" holding="Keep holding…" text="SOS" small={compact} onDone={fire} />
+      {!compact && <PressConfirm onSend={fire} />}
+    </div>
+  );
+}
+
+/** For officers who can't hold: press once, then confirm (§3). */
+function PressConfirm({ onSend }: { onSend: () => void }) {
+  const [ask, setAsk] = useState(false);
+  if (!ask)
+    return (
+      <button className="btn lg block" onClick={() => setAsk(true)}>
+        Or press once and confirm
+      </button>
+    );
+  return (
+    <div className="row" style={{ gap: 8 }}>
+      <button className="btn danger lg" style={{ flex: 1 }} onClick={() => (setAsk(false), onSend())}>
+        Send Officer SOS now
+      </button>
+      <button className="btn lg" onClick={() => setAsk(false)}>
+        Cancel
+      </button>
     </div>
   );
 }
@@ -45,7 +69,7 @@ export function CheckInPrompt() {
         <Icon name="alert" size={40} />
         <h1>Are you OK?</h1>
         <p>You are working alone on {i.ref} ({i.area}). Please check in. If you don't answer in 3 minutes, an Officer SOS is raised automatically.</p>
-        <button className="btn primary xl block" onClick={() => run(safety.checkIn(i.id, true), 'Thanks — timer reset.')}>
+        <button className="btn primary xl block" autoFocus onClick={() => run(safety.checkIn(i.id, true), 'Thanks — timer reset.')}>
           I'm OK
         </button>
         <button className="btn danger xl block" onClick={() => run(safety.checkIn(i.id, false), 'OFFICER SOS sent.')}>
