@@ -1,4 +1,4 @@
-import type { Agency, CategoryId, Deployment, Incident, Person, RoutingRule, Severity, SlaWindow } from './types';
+import type { Agency, CategoryId, Deployment, Handoff, Incident, Person, RoutingRule, Severity, SlaWindow } from './types';
 
 export const MIN = 60_000;
 export const HOUR = 60 * MIN;
@@ -20,13 +20,18 @@ export function matchRule(matrix: RoutingRule[], category: CategoryId, subcatego
   return candidates.sort((a, b) => score(b) - score(a))[0];
 }
 
+/** Stations that are setting up or suspended are skipped by routing (PRD v2.2 §4.2). */
+export const isLive = (a: Agency) => (a.status ?? 'live') === 'live';
+/** Seeded staff have no status and count as active. */
+export const isActive = (p: Person) => (p.staffStatus ?? 'active') === 'active';
+
 export function resolveTarget(dep: Deployment, target: string, lgaId: string): Agency | undefined {
   const covering = (kind: Agency['kind']) =>
-    dep.agencies.find((a) => a.kind === kind && a.lgaIds.includes(lgaId)) ?? dep.agencies.find((a) => a.kind === kind && !a.lgaIds.length);
+    dep.agencies.find((a) => a.kind === kind && isLive(a) && a.lgaIds.includes(lgaId)) ?? dep.agencies.find((a) => a.kind === kind && isLive(a) && !a.lgaIds.length);
   if (target === '@police') return covering('police');
   if (target === '@corps') return covering('corps');
   if (target === '@lga') return covering('lga_council');
-  return dep.agencies.find((a) => a.id === target);
+  return dep.agencies.find((a) => a.id === target && isLive(a));
 }
 
 export function route(dep: Deployment, matrix: RoutingRule[], category: CategoryId, subcategory: string | undefined, lgaId: string) {
@@ -35,12 +40,32 @@ export function route(dep: Deployment, matrix: RoutingRule[], category: Category
   return { rule, agency };
 }
 
-/** Field officer in the agency with the fewest open cases. */
-export function pickOfficer(dep: Deployment, incidents: Incident[], agencyId: string) {
-  const officers = dep.people.filter((p) => p.agencyId === agencyId && p.role === 'officer');
+// ---------- Duty ----------
+
+export type OnDuty = (personId: string) => boolean;
+const always: OnDuty = () => true;
+
+/**
+ * On-duty field officer in the agency with the fewest open cases.
+ * If nobody is on duty it returns undefined, so the case goes to the next
+ * role up (the unit commander / agency managers), never to an off-duty phone.
+ */
+export function pickOfficer(dep: Deployment, incidents: Incident[], agencyId: string, onDuty: OnDuty = always) {
+  const officers = dep.people.filter((p) => p.agencyId === agencyId && p.role === 'officer' && isActive(p) && onDuty(p.id));
   if (!officers.length) return undefined;
   const load = (id: string) => incidents.filter((i) => i.officerId === id && isOpen(i)).length;
   return officers.sort((a, b) => load(a.id) - load(b.id))[0];
+}
+
+export const MANAGER_ROLES: Person['role'][] = ['supervisor', 'ops_manager', 'agency_head'];
+
+/** People who answer for an agency: managers on duty first, else all managers. */
+export function agencyManagers(dep: Deployment, agencyId: string, onDuty: OnDuty = always) {
+  const kind = dep.agencies.find((a) => a.id === agencyId)?.kind;
+  const roles: Person['role'][] = kind === 'control_room' ? ['dispatcher', 'ops_manager'] : kind === 'sensitive_desk' ? ['sensitive'] : MANAGER_ROLES;
+  const all = dep.people.filter((p) => p.agencyId === agencyId && roles.includes(p.role) && isActive(p));
+  const on = all.filter((p) => onDuty(p.id));
+  return on.length ? on : all;
 }
 
 // ---------- SLA & escalation ----------
@@ -55,16 +80,21 @@ export function deadlines(createdAt: number, w: SlaWindow) {
 
 export const MAX_LEVEL: Record<Severity, number> = { critical: 5, high: 4, normal: 3, low: 2 };
 
-export const OPEN: Incident['status'][] = ['triage', 'assigned', 'accepted', 'in_progress', 'reopened'];
+/** Statuses where someone still owes action: SLA clocks run and escalation applies. */
+export const OPEN: Incident['status'][] = ['pending', 'verified', 'assigned', 'accepted', 'in_progress', 'reopened'];
+export const FINAL: Incident['status'][] = ['closed', 'rejected', 'referred'];
 export const isOpen = (i: Incident) => OPEN.includes(i.status);
+export const isFinal = (i: Incident) => FINAL.includes(i.status);
+export const pendingHandoff = (i: Incident): Handoff | undefined => i.handoffs.find((h) => h.status === 'pending');
 
 /** Level the case *should* be at now. Levels only ever go up. */
 export function escalationFor(i: Incident, now: number): number {
   if (!isOpen(i)) return i.escalationLevel;
   let level = 1;
   const ackWin = i.ackDueAt - (i.t.assigned ?? i.createdAt);
+  // Not accepted in the window → supervisor; half a window more → operations lead.
   if (!i.t.acknowledged && now > i.ackDueAt) level = 2;
-  if (!i.t.acknowledged && now > i.ackDueAt + 2 * ackWin) level = 3;
+  if (!i.t.acknowledged && now > i.ackDueAt + ackWin * 0.5) level = 3;
   if (i.arriveDueAt && !i.t.onScene) {
     const w = i.arriveDueAt - i.createdAt;
     if (now > i.arriveDueAt) level = Math.max(level, 3);
@@ -81,17 +111,24 @@ export function escalationFor(i: Incident, now: number): number {
 export const LEVEL_LABEL = ['', 'Responder', 'Supervisor', 'Operations lead', 'Agency head', 'Central command'];
 export const SECURITY_LEVEL_LABEL = ['', 'Patrol lead', 'Unit commander', 'Control-room duty lead', 'State security coordinator', 'Executive security brief'];
 
-/** Who gets told at each level. Security units hand levels 3–5 to the control room. */
-export function escalationContact(dep: Deployment, i: Incident, level: number): Person | undefined {
-  const inAgency = (agencyId: string, role: Person['role']) => dep.people.find((p) => p.agencyId === agencyId && p.role === role);
+const LADDER: Person['role'][] = ['officer', 'officer', 'supervisor', 'ops_manager', 'agency_head'];
+
+/**
+ * Who gets told at each level. On-duty people first; if nobody in that role is
+ * on duty, the next role up in the same agency; security units (which have no
+ * operations lead) hand levels 3–5 to the control room.
+ */
+export function escalationContact(dep: Deployment, i: Incident, level: number, onDuty: OnDuty = always): Person | undefined {
+  const find = (agencyId: string, role: Person['role'], duty = true) => dep.people.find((p) => p.agencyId === agencyId && p.role === role && isActive(p) && (!duty || onDuty(p.id)));
   const controlRoom = dep.agencies.find((a) => a.kind === 'control_room');
-  const roles: Person['role'][] = ['officer', 'officer', 'supervisor', 'ops_manager', 'agency_head'];
-  if (level === 1) return i.officerId ? dep.people.find((p) => p.id === i.officerId) : inAgency(i.agencyId, 'officer');
-  if (level === 5) return dep.people.find((p) => p.role === (i.restricted ? 'executive' : 'command'));
-  const own = inAgency(i.agencyId, roles[level]);
-  if (own) return own;
-  if (controlRoom) return inAgency(controlRoom.id, roles[level]) ?? inAgency(controlRoom.id, 'ops_manager');
-  return undefined;
+  if (level <= 1) return i.officerId ? dep.people.find((p) => p.id === i.officerId) : find(i.agencyId, 'officer') ?? find(i.agencyId, 'supervisor', false);
+  if (level >= 5) return dep.people.find((p) => p.role === (i.restricted ? 'executive' : 'command'));
+  for (let k = level; k < LADDER.length; k++) {
+    const own = find(i.agencyId, LADDER[k]);
+    if (own) return own;
+  }
+  if (controlRoom) return find(controlRoom.id, LADDER[level]) ?? find(controlRoom.id, 'ops_manager') ?? find(controlRoom.id, LADDER[level], false) ?? find(controlRoom.id, 'ops_manager', false);
+  return find(i.agencyId, LADDER[level], false);
 }
 
 export type Clock = 'ok' | 'due_soon' | 'breached' | 'met' | 'missed';
@@ -125,15 +162,17 @@ const DUP_WINDOW: Record<CategoryId, { hours: number; km: number }> = {
   roads: { hours: 24 * 14, km: 0.3 },
   waste: { hours: 72, km: 0.3 },
   infrastructure: { hours: 72, km: 0.3 },
+  other: { hours: 2, km: 0.2 },
 };
 
 export function findDuplicate(incidents: Incident[], c: { category: CategoryId; subcategory?: string; lat: number; lng: number; at: number }) {
+  if (c.category === 'other') return undefined; // unclassified reports are read by a person first
   const w = DUP_WINDOW[c.category];
   return incidents
     .filter(
       (i) =>
         i.category === c.category &&
-        (c.category !== 'security' || !i.subcategory || !c.subcategory || i.subcategory === c.subcategory || c.subcategory === 'sos') &&
+        (c.category !== 'security' || !i.subcategory || !c.subcategory || i.subcategory === c.subcategory) &&
         isOpen(i) &&
         c.at - lastReportAt(i) < w.hours * HOUR &&
         km(i.lat, i.lng, c.lat, c.lng) <= w.km,
@@ -142,6 +181,10 @@ export function findDuplicate(incidents: Incident[], c: { category: CategoryId; 
 }
 
 export const lastReportAt = (i: Incident) => Math.max(...i.reports.map((r) => r.submittedAt));
+
+/** A1: one key per distinct reporter. Anonymous reports only count as distinct by channel. */
+export const reporterKey = (r: Incident['reports'][number]) => r.reporter?.personId ?? r.reporter?.phone ?? `anon:${r.channel}`;
+export const distinctReporters = (i: Incident) => new Set(i.reports.map(reporterKey)).size;
 
 export function affectedRadius(i: Incident) {
   if (i.reports.length < 2) return 0;
@@ -152,31 +195,40 @@ export function affectedRadius(i: Incident) {
 
 export type Viewer = Person;
 
+const involved = (i: Incident, agencyId?: string) =>
+  !!agencyId && (i.agencyId === agencyId || i.handoffs.some((h) => h.toAgencyId === agencyId || h.fromAgencyId === agencyId) || !!i.officerSos?.responses.some((r) => r.agencyId === agencyId));
+
 export function canOpen(v: Viewer, i: Incident, dep: Deployment): boolean {
-  if (i.sensitiveOnly) return v.role === 'sensitive';
+  if (v.role === 'admin') return false; // administrators run the platform; they do not read cases
+  if (i.sensitiveOnly && v.role !== 'sensitive') {
+    // Restricted-desk cases reach a partner unit only when the desk passes them on.
+    if (!['supervisor', 'officer'].includes(v.role)) return false;
+  }
   switch (v.role) {
     case 'citizen':
       return i.reports.some((r) => r.reporter?.personId === v.id);
     case 'officer':
-      return i.officerId === v.id;
+      return i.officerId === v.id || i.handoffs.some((h) => h.toPersonId === v.id || h.fromId === v.id);
     case 'supervisor':
     case 'ops_manager':
     case 'agency_head': {
       const own = dep.agencies.find((a) => a.id === v.agencyId);
-      if (own?.kind === 'control_room') return i.restricted;
-      return i.agencyId === v.agencyId;
+      if (own?.kind === 'control_room') return (i.restricted && !i.sensitiveOnly) || i.status === 'pending' || involved(i, own.id);
+      return involved(i, v.agencyId);
     }
-    case 'dispatcher':
-      return i.restricted;
+    case 'dispatcher': {
+      const cr = dep.agencies.find((a) => a.kind === 'control_room')?.id;
+      return (i.restricted && !i.sensitiveOnly) || i.status === 'pending' || involved(i, cr);
+    }
     case 'chairman':
       return i.lgaId === v.lgaId && !i.restricted;
     case 'command':
     case 'executive':
+      return !i.sensitiveOnly;
     case 'sensitive':
       return true;
-    case 'admin':
-      return false; // administrators run the platform; they do not read cases
   }
+  return false;
 }
 
 /** Reporter identity. Confidential needs break-glass by the sensitive role; anonymous is never stored. */

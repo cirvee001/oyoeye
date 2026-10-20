@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { SEVERITIES, route } from '../platform/engine';
-import type { CategoryId, RoutingRule } from '../platform/types';
-import { dep, getState, removeRule, subLabel, updateRule, updateSla, useStore, verifyChain } from '../store';
+import type { CategoryId, RoutingRule, Shift } from '../platform/types';
+import { dep, getState, removeRule, setDuty, subLabel, updateRule, updateSla, useStore, verifyChain } from '../store';
 import { Card, dayTime, go } from '../ui';
 
 const TARGETS = [
@@ -318,6 +318,89 @@ export function Outbox() {
           </div>
         ))}
       </div>
+    </>
+  );
+}
+
+// ---------- Duty roster ----------
+
+const SHIFTS: { id: Shift; label: string }[] = [
+  { id: 'morning', label: 'Morning 06–14' },
+  { id: 'afternoon', label: 'Afternoon 14–22' },
+  { id: 'night', label: 'Night 22–06' },
+];
+
+/** Escalation and auto-assignment pick on-duty people first, then the next role up. */
+export function DutyRoster() {
+  const duty = useStore((s) => s.duty);
+  const [q, setQ] = useState('');
+  const [agencyId, setAgencyId] = useState('pol-bdj');
+  const staff = dep.people.filter((p) => p.role !== 'citizen' && p.agencyId && (q ? `${p.name} ${p.staffId}`.toLowerCase().includes(q.toLowerCase()) : p.agencyId === agencyId));
+  const units = dep.agencies.filter((a) => dep.people.some((p) => p.agencyId === a.id));
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <h1>Duty roster</h1>
+          <p>Who is on duty right now. New cases and escalations go to on-duty people first; if nobody in a role is on duty, they go to the next role up.</p>
+        </div>
+      </div>
+      <div className="row">
+        <select className="input" style={{ width: 280 }} value={agencyId} onChange={(e) => (setAgencyId(e.target.value), setQ(''))}>
+          {units.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+        <input className="input" style={{ width: 260 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Or search any staff by name / ID" />
+      </div>
+      <Card pad={false}>
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Staff</th>
+                <th>Role</th>
+                <th>Unit</th>
+                <th>Shift</th>
+                <th>On duty</th>
+              </tr>
+            </thead>
+            <tbody>
+              {staff.map((p) => {
+                const d = duty[p.id] ?? { on: true, shift: 'morning' as Shift };
+                return (
+                  <tr key={p.id}>
+                    <td>
+                      <span className={`duty-dot${d.on ? ' on' : ''}`} /> <b>{p.name}</b>
+                      <div className="tiny muted mono">{p.staffId}</div>
+                    </td>
+                    <td className="small">{p.title}</td>
+                    <td className="small">{dep.agencies.find((a) => a.id === p.agencyId)?.short}</td>
+                    <td>
+                      <select className="input" style={{ width: 170 }} value={d.shift} onChange={(e) => setDuty(p.id, d.on, e.target.value as Shift)}>
+                        {SHIFTS.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <label className="switch">
+                        <input type="checkbox" checked={d.on} onChange={(e) => setDuty(p.id, e.target.checked)} />
+                        <span>{d.on ? 'On duty' : 'Off duty'}</span>
+                      </label>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      <p className="tiny muted">Every change is written to the audit log. Staff can also switch their own status in the header.</p>
     </>
   );
 }

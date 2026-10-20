@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import type { CategoryId, Identity } from '../platform/types';
 import { dep, lgaOf, persona, submitReport } from '../store';
-import { Card, go } from '../ui';
+import { Card, CatIcon, go, toast } from '../ui';
 
-/** A 615 operator turns a phone call into an OyoEye incident, in the same system as app reports. */
+/** A 615 operator turns a phone call into a case — the same 3 steps as the citizen form. */
 export function Intake() {
   const me = persona();
   const [callRef] = useState(() => `CALL-615-${String(88413 + Math.floor(Math.random() * 900))}`);
+  const [step, setStep] = useState(1);
   const [category, setCategory] = useState<CategoryId>('security');
   const [sub, setSub] = useState('suspicious');
   const [text, setText] = useState('');
@@ -32,53 +33,68 @@ export function Intake() {
       reporter: identity === 'anonymous' ? undefined : { name: name || 'Caller', phone: phone || undefined },
       actor: me,
     });
-    go(res.incident.restricted ? '/control' : `/case/${res.incident.id}`);
+    const civicRouted = !res.incident.restricted && res.incident.status !== 'pending';
+    toast(civicRouted ? `Case ${res.ref} created and sent to the responsible agency.` : `Case ${res.ref} created from ${callRef}.`);
+    go(civicRouted ? '/control' : `/case/${res.incident.id}`);
   };
 
   return (
-    <>
+    <div className="narrow stack lg">
       <div className="page-head">
         <div>
           <h1>New {dep.emergencyLine} call</h1>
-          <p>Log the call as an incident. It joins the same queue as app, WhatsApp and SMS reports and gets the same routing, clocks and audit.</p>
+          <p>Log the call as a case. It joins the same board as app, WhatsApp, SMS and USSD reports and gets the same clocks and audit.</p>
         </div>
+        <div className="spacer" />
+        <span className="mono muted">{callRef}</span>
       </div>
-      <div className="grid split">
-        <Card title="Call details" right={<span className="mono muted">{callRef}</span>}>
+      <div className="progress3">
+        {[1, 2, 3].map((k) => (
+          <span key={k} className={k <= step ? 'on' : ''} />
+        ))}
+      </div>
+      {step === 1 && (
+        <Card title="1. What is the caller reporting?">
           <div className="stack lg">
-            <label className="field">
-              <span>What is the caller reporting?</span>
-              <textarea className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Write it in the caller's words where possible" />
-            </label>
-            <div className="grid g2">
-              <label className="field">
-                <span>Category</span>
-                <select
-                  className="input"
-                  value={category}
-                  onChange={(e) => {
-                    const v = e.target.value as CategoryId;
-                    setCategory(v);
-                    setSub(dep.categories.find((x) => x.id === v)!.subcategories[0].id);
+            <div className="cat-grid">
+              {dep.categories.map((x) => (
+                <button
+                  key={x.id}
+                  className={`cat-tile${category === x.id ? ' on' : ''}`}
+                  onClick={() => {
+                    setCategory(x.id);
+                    setSub(x.subcategories[0].id);
                   }}
                 >
-                  {dep.categories.map((x) => (
-                    <option key={x.id} value={x.id}>
-                      {x.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Type</span>
-                <select className="input" value={sub} onChange={(e) => setSub(e.target.value)}>
-                  {c.subcategories.map((x) => (
-                    <option key={x.id} value={x.id}>
-                      {x.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  <CatIcon c={x.id} size={22} />
+                  <span>{x.label}</span>
+                </button>
+              ))}
+            </div>
+            <label className="field">
+              <span>Type</span>
+              <select className="input" value={sub} onChange={(e) => setSub(e.target.value)}>
+                {c.subcategories.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>In the caller's words</span>
+              <textarea className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Write it in the caller's words where possible" />
+            </label>
+            <button className="btn primary lg" disabled={text.trim().length < 6} onClick={() => setStep(2)}>
+              Next
+            </button>
+          </div>
+        </Card>
+      )}
+      {step === 2 && (
+        <Card title="2. Where?">
+          <div className="stack lg">
+            <div className="grid g2">
               <label className="field">
                 <span>LGA</span>
                 <select
@@ -109,9 +125,19 @@ export function Intake() {
               <span>Landmark</span>
               <input className="input" value={landmark} onChange={(e) => setLandmark(e.target.value)} placeholder="e.g. opposite the filling station" />
             </label>
+            <div className="row">
+              <button className="btn lg" onClick={() => setStep(1)}>
+                Back
+              </button>
+              <button className="btn primary lg" onClick={() => setStep(3)}>
+                Next
+              </button>
+            </div>
           </div>
         </Card>
-        <Card title="Caller">
+      )}
+      {step === 3 && (
+        <Card title="3. Caller">
           <div className="stack lg">
             <div className="seg">
               {(['standard', 'confidential', 'anonymous'] as Identity[]).map((x) => (
@@ -129,14 +155,20 @@ export function Intake() {
                 {identity === 'confidential' && <div className="notice sealed small">Sealed: only restricted-cases officers can unseal it, and every unseal is logged.</div>}
               </>
             )}
-            <div className="hr" />
-            <div className="small muted">Recording reference {callRef} is attached to the case. Operator: {me.name}.</div>
-            <button className="btn primary lg" disabled={text.trim().length < 6} onClick={submit}>
-              Create incident
-            </button>
+            <div className="small muted">
+              Recording reference {callRef} is attached to the case. Operator: {me.name}.
+            </div>
+            <div className="row">
+              <button className="btn lg" onClick={() => setStep(2)}>
+                Back
+              </button>
+              <button className="btn primary lg" onClick={submit}>
+                Create case
+              </button>
+            </div>
           </div>
         </Card>
-      </div>
-    </>
+      )}
+    </div>
   );
 }

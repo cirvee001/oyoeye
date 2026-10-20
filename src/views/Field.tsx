@@ -1,87 +1,90 @@
-import { isOpen } from '../platform/engine';
-import { actions, agency, dep, lgaOf, persona, subLabel, useStore } from '../store';
-import { Clock, Sev, Stage, ago, go, useNow } from '../ui';
+import { isOpen, pendingHandoff } from '../platform/engine';
+import { agency, lgaOf, persona, subLabel, useStore } from '../store';
+import { CatIcon, Clock, Flags, Sev, StatusPill, ago, go, useNow } from '../ui';
+import { NextStep } from './CaseView';
+import { LiveMap } from './LiveMap';
+import { OfficerSosButton } from './Safety';
+import { useState } from 'react';
+import { Sheet } from '../ui';
+import type { Incident } from '../platform/types';
 
 const RANK = { critical: 0, high: 1, normal: 2, low: 3 };
 
-/** Field officers get a phone-first list, not an enterprise dashboard. */
+/** Field officers get a phone-first list with the next step on each card. */
 export function Field() {
   const me = persona();
   const at = useNow(5000);
   const incidents = useStore((s) => s.incidents);
-  const mine = incidents.filter((i) => i.officerId === me.id && isOpen(i)).sort((a, b) => Number(!!a.t.acknowledged) - Number(!!b.t.acknowledged) || RANK[a.severity] - RANK[b.severity]);
-  const done = incidents.filter((i) => i.officerId === me.id && !isOpen(i)).slice(0, 6);
-  const emergency = agency(me.agencyId)?.kind === 'police' || agency(me.agencyId)?.kind === 'corps';
+  const waiting = (i: (typeof incidents)[number]) => !!pendingHandoff(i) || i.status === 'reopened';
+  const mine = incidents
+    .filter((i) => i.officerId === me.id && (isOpen(i) || i.status === 'resolved'))
+    .sort((a, b) => Number(waiting(b)) - Number(waiting(a)) || Number(a.status === 'resolved') - Number(b.status === 'resolved') || RANK[a.severity] - RANK[b.severity]);
+  const [mapFor, setMapFor] = useState<Incident>();
+  const done = incidents.filter((i) => i.officerId === me.id && !isOpen(i) && i.status !== 'resolved').slice(0, 6);
 
   return (
     <div className="phone">
+      {mapFor && (
+        <Sheet title={`${mapFor.ref} — map`} onClose={() => setMapFor(undefined)} wide>
+          <LiveMap rows={[mapFor]} focus={mapFor} selfId={me.id} controls={false} height="65vh" />
+          <a className="btn primary lg block" style={{ marginTop: 10 }} href={`https://maps.google.com/?q=${mapFor.lat.toFixed(5)},${mapFor.lng.toFixed(5)}`} target="_blank" rel="noreferrer">
+            Navigate (Google Maps)
+          </a>
+        </Sheet>
+      )}
       <div>
         <h1>My cases</h1>
         <p className="muted">
           {me.name} · {agency(me.agencyId)?.short}
         </p>
       </div>
-      {!mine.length && <div className="empty">No open cases. New assignments arrive here and on WhatsApp.</div>}
+      <OfficerSosButton />
+      {!mine.length && <div className="empty">No open cases. New cases passed to you appear here and in your inbox.</div>}
       {mine.map((i) => (
-        <div key={i.id} className="field-case" style={{ borderLeft: `4px solid var(--${i.severity === 'critical' ? 'crit' : i.severity === 'high' ? 'high' : 'normal'})` }}>
+        <div key={i.id} className={`field-case sev-${i.severity}`}>
           <div className="row between">
             <div className="row" style={{ gap: 6 }}>
-              {i.severity === 'critical' && !i.t.acknowledged ? <span className="badge solid pulse">URGENT</span> : <Sev s={i.severity} />}
+              <CatIcon c={i.category} size={18} />
               <b>{subLabel(i.category, i.subcategory)}</b>
+              <Sev s={i.severity} />
             </div>
-            <Stage i={i} />
+            <StatusPill i={i} />
           </div>
           <div>
             {i.area}, {lgaOf(i.lgaId).name}
             {i.landmark ? ` — near ${i.landmark}` : ''}
           </div>
-          <div className="small muted">
-            Assigned {ago(i.t.assigned ?? i.createdAt, at)} · <span className="mono">{i.ref}</span>
-            {i.reports.length > 1 ? ` · ${i.reports.length} reports` : ''}
+          <div className="row" style={{ gap: 6 }}>
+            <Flags i={i} at={at} />
+            <Clock i={i} at={at} />
           </div>
-          {i.restricted && <div className="tiny muted">Reporter contact is held by the control room. Treat as unverified until you confirm on scene.</div>}
-          <Clock i={i} at={at} />
-          {!i.t.acknowledged ? (
-            <button className="btn primary lg block" onClick={() => actions.accept(i.id)}>
-              ACCEPT
+          <div className="small muted">
+            <span className="mono">{i.ref}</span> · reported {ago(i.createdAt, at)}
+            {i.restricted ? ' · reporter contact held by the control room' : ''}
+          </div>
+          <NextStep i={i} compact />
+          <div className="row">
+            <button className="btn" onClick={() => setMapFor(i)}>
+              Map
             </button>
-          ) : (
-            <div className="field-actions">
-              <a className="btn block" href={`https://maps.google.com/?q=${i.lat.toFixed(5)},${i.lng.toFixed(5)}`} target="_blank" rel="noreferrer">
-                Navigate
-              </a>
-              <a className="btn block" href={`tel:${dep.emergencyLine}`}>
-                Call control room
-              </a>
-              {!i.t.enRoute ? (
-                <button className="btn primary block" onClick={() => actions.enRoute(i.id)}>
-                  {emergency || i.category === 'fire' ? 'En route' : 'Start work'}
-                </button>
-              ) : (emergency || i.category === 'fire') && !i.t.onScene ? (
-                <button className="btn primary block" onClick={() => actions.onScene(i.id)}>
-                  Arrived
-                </button>
-              ) : (
-                <button className="btn primary block" onClick={() => go(`/case/${i.id}`)}>
-                  Upload evidence
-                </button>
-              )}
-              <button className="btn block" onClick={() => go(`/case/${i.id}`)}>
-                {i.restricted ? 'Sitrep / backup / close' : 'Update / complete'}
-              </button>
-            </div>
-          )}
+            <a className="btn" href={`https://maps.google.com/?q=${i.lat.toFixed(5)},${i.lng.toFixed(5)}`} target="_blank" rel="noreferrer">
+              Navigate
+            </a>
+            <button className="btn ghost" style={{ flex: 1 }} onClick={() => go(`/case/${i.id}`)}>
+              Open full case →
+            </button>
+          </div>
         </div>
       ))}
       {!!done.length && (
         <>
           <h3 className="muted">Recently closed</h3>
           {done.map((i) => (
-            <div key={i.id} className="row between small" style={{ cursor: 'pointer' }} onClick={() => go(`/case/${i.id}`)}>
+            <div key={i.id} className="row between small click" onClick={() => go(`/case/${i.id}`)}>
               <span>
                 {subLabel(i.category, i.subcategory)} · {i.area}
               </span>
-              <Stage i={i} />
+              <StatusPill i={i} />
             </div>
           ))}
         </>
