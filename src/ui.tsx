@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { MIN, clockState, dur, isOpen, isOverdue, pendingHandoff } from './platform/engine';
-import type { CategoryId, Incident, Severity } from './platform/types';
+import { MIN, clockState, distinctReporters, dur, isOpen, isOverdue, pendingHandoff } from './platform/engine';
+import type { CategoryId, Incident, Severity, Status } from './platform/types';
 import { STATUS_COLOR, STATUS_ORDER, STATUS_TONE, statusLabel, tr, type Lang } from './i18n';
 import { agency, cat, dep, handoffTarget, holderLabel, levelLabel, lgaOf, now, persona, stepOf, subLabel, useStore } from './store';
 import { ALERT_FLASH_MS, alertsFor } from './alerts';
+import { handoffClock } from './countdown';
 import { readPhoto } from './photo';
+import { fmtAgo, fmtDateTime, fmtNum, fmtPct, fmtTime, fmtTimeWat, lagosDayStart } from './format';
 import {
   ArrowRightLeft, Bell, LocateFixed, Navigation, Volume2, VolumeX, Maximize2, Layers, Building2, Download, KeyRound, Megaphone, MessageCircle, Paperclip, Pin, SendHorizontal, Upload, CalendarClock, Camera, ChartColumn, Check, ChevronDown, ChevronLeft, ChevronRight, CircleCheck, CircleHelp, Clock as ClockIcon, Construction, Ellipsis, FileText, Flame, House, Inbox as InboxIcon, LayoutDashboard, ListChecks, ListFilter, LogOut, MapPin, Menu, Mic, PhoneCall, Plus, Route, ScrollText, Search, Shield, Siren, Timer, Trash2, TriangleAlert, User, Users, Waves, X, Zap, type LucideIcon,
 } from 'lucide-react';
@@ -19,16 +21,30 @@ export function useNow(ms = 15_000) {
 }
 
 export const go = (path: string) => (location.hash = path);
-export const hhmm = (t?: number) => (t ? new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—');
-export const dayTime = (t: number) => new Date(t).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+/** "2:15 pm" in Oyo time (see src/format.ts). */
+export const hhmm = (t?: number) => fmtTime(t);
+/** "20/10/2026, 2:15 pm" */
+export const dayTime = (t: number) => fmtDateTime(t);
+/** "12 min ago", "3 h ago", "yesterday" — with the full date and time in Ago's tooltip. */
 export const ago = (t: number, at = now(), lang: Lang = 'en') => {
   const m = Math.round((at - t) / MIN);
+  if (lang === 'en') return fmtAgo(t, at);
   if (m < 1) return tr('ago.now', lang);
   if (m < 60) return tr('ago.m', lang, { m });
-  if (m < 1440) return tr('ago.h', lang, { h: Math.floor(m / 60), m: m % 60 });
-  return tr('ago.d', lang, { d: Math.floor(m / 1440) });
+  const days = Math.round((lagosDayStart(at) - lagosDayStart(t)) / 86_400_000);
+  if (days <= 0) return tr('ago.h', lang, { h: Math.floor(m / 60) });
+  if (days === 1) return tr('ago.y', lang);
+  return tr('ago.d', lang, { d: days });
 };
-export const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : '—');
+/** A relative time that shows the full date and time on hover / long-press. */
+export function Ago({ t, at, lang = 'en' }: { t: number; at?: number; lang?: Lang }) {
+  return (
+    <time dateTime={new Date(t).toISOString()} title={`${fmtDateTime(t)} WAT`}>
+      {ago(t, at ?? now(), lang)}
+    </time>
+  );
+}
+export const pct = (a: number, b: number) => fmtPct(a, b);
 
 export const SEV_COLOR: Record<Severity, string> = { critical: 'var(--crit)', high: 'var(--high)', normal: 'var(--normal)', low: 'var(--low)' };
 
@@ -38,9 +54,33 @@ export function Sev({ s }: { s: Severity }) {
 
 // ---------- status ----------
 
-export function StatusPill({ i, lang = 'en', big }: { i: Pick<Incident, 'status' | 'verification'>; lang?: Lang; big?: boolean }) {
+/** cta: the citizen must act ("Resolved — please confirm"). */
+export function StatusPill({ i, lang = 'en', big, cta }: { i: Pick<Incident, 'status' | 'verification'>; lang?: Lang; big?: boolean; cta?: boolean }) {
   return (
-    <span className={`pill ${STATUS_TONE[i.status]}${big ? ' big' : ''}`}>{statusLabel(i, lang)}</span>
+    <span className={`pill ${STATUS_TONE[i.status]}${big ? ' big' : ''}${cta && i.status === 'resolved' ? ' cta' : ''}`} title={tr(`mean.${i.status}` as Parameters<typeof tr>[0], lang)}>
+      {cta && i.status === 'resolved' ? tr('st.resolved.cta', lang) : statusLabel(i, lang)}
+    </span>
+  );
+}
+
+/** "What do these mean?" — every step and side state in one plain line (PRD v2.6 §1.3). */
+export function StatusMeanings({ lang = 'en' }: { lang?: Lang }) {
+  const row = (st: Status) => (
+    <li key={st}>
+      <span className="pill-dot" style={{ background: STATUS_COLOR[st] }} aria-hidden />
+      <b>{`${statusLabel({ status: st }, lang)}:`}</b> {tr(`mean.${st}` as Parameters<typeof tr>[0], lang)}
+    </li>
+  );
+  return (
+    <details className="meanings">
+      <summary>{tr('mean.title', lang)}</summary>
+      <div className="meanings-pop" role="note">
+        <div className="tiny muted">{tr('mean.steps', lang)}</div>
+        <ul>{STATUS_ORDER.map(row)}</ul>
+        <div className="tiny muted">{tr('mean.side', lang)}</div>
+        <ul>{(['reopened', 'rejected', 'referred'] as Status[]).map(row)}</ul>
+      </div>
+    </details>
   );
 }
 
@@ -71,18 +111,34 @@ export function TopFlag({ i, at }: { i: Incident; at: number }) {
 }
 
 /** HospEase-style stat card: tinted icon circle, grey label, big number. */
-export function StatCard({ icon, label, value, sub, tone = 'green', onClick }: { icon: string; label: string; value: ReactNode; sub?: ReactNode; tone?: 'green' | 'blue' | 'amber' | 'red' | 'purple' | 'grey'; onClick?: () => void }) {
-  return (
-    <div className={`statcard${onClick ? ' click' : ''}`} onClick={onClick}>
+/** A number card. With "to" it is a link to the matching filtered list (PRD v2.6 §3). */
+export function StatCard({ icon, label, value, sub, tone = 'green', onClick, to, view = 'View' }: { icon: string; label: string; value: ReactNode; sub?: ReactNode; tone?: 'green' | 'blue' | 'amber' | 'red' | 'purple' | 'grey'; onClick?: () => void; to?: string; view?: string }) {
+  const body = (
+    <>
       <span className={`sc-ico t-${tone}`}>
         <Icon name={icon} size={20} />
       </span>
       <div className="sc-label">{label}</div>
-      <div className="sc-value">{value}</div>
+      <div className="sc-value">{typeof value === 'number' ? fmtNum(value) : value}</div>
       {sub && <div className="sc-sub">{sub}</div>}
+      {to && <span className="sc-view" aria-hidden>{`${view} →`}</span>}
+    </>
+  );
+  if (to)
+    return (
+      <a className="statcard click" href={`#${to}`} data-to={to} aria-label={`${label}: ${typeof value === 'number' ? fmtNum(value) : value}. ${view}`}>
+        {body}
+      </a>
+    );
+  return (
+    <div className={`statcard${onClick ? ' click' : ''}`} onClick={onClick}>
+      {body}
     </div>
   );
 }
+
+/** The query part of the current route (#/cases?tab=…). */
+export const useQuery = () => new URLSearchParams(typeof location !== 'undefined' ? location.hash.split('?')[1] ?? '' : '');
 
 /** Underline tabs with count chips (HospEase Tabs). */
 export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: string; count?: number }[]; value: T; onChange: (v: T) => void }) {
@@ -116,7 +172,9 @@ export function Flags({ i, at, safe }: { i: Incident; at: number; safe?: boolean
   if (h) out.push(<span key="h" className="badge handoff">Handoff pending → {handoffTarget(h)}</span>);
   if (i.escalationLevel >= 2 && isOpen(i)) out.push(<span key="e" className={`badge ${i.escalationLevel >= 4 ? 'bad' : 'warn'}`}>Escalated L{i.escalationLevel} · {levelLabel(i)}</span>);
   if (isOverdue(i, at)) out.push(<span key="o" className="badge bad">Overdue</span>);
-  if (i.restricted && i.unverified && isOpen(i)) out.push(<span key="u" className="badge">Uncorroborated</span>);
+  const people = distinctReporters(i);
+  if (people > 1) out.push(<span key="n" className="badge info">Reported by {people} people</span>);
+  else if (i.restricted && i.unverified && isOpen(i)) out.push(<span key="u" className="badge">Single report</span>);
   if (i.backupRequested && isOpen(i)) out.push(<span key="b" className="badge bad">Backup requested</span>);
   if (i.backupSent && isOpen(i)) out.push(<span key="bs" className="badge info">Backup: {i.backupSent}</span>);
   return <>{out}</>;
@@ -171,6 +229,7 @@ export function Stepper({ i, compact, safe = false, lang = 'en' }: { i: Incident
   const sub = i.status === 'in_progress' ? tr(i.t.onScene ? 'step.onscene' : i.t.enRoute ? 'step.enroute' : 'step.working', lang) : undefined;
   const side = i.side && (i.status === i.side.kind || i.side.kind === 'reopened') ? i.side : undefined;
   return (
+    <div className={`stepper-wrap${compact ? ' compact' : ''}`}>
     <ol className={`stepper${compact ? ' compact' : ''}`} aria-label={tr('step.aria', lang)}>
       {STATUS_ORDER.map((st, k) => {
         const done = k < cur || (k === cur && (final || i.status === 'rejected'));
@@ -180,7 +239,7 @@ export function Stepper({ i, compact, safe = false, lang = 'en' }: { i: Incident
         const struck = i.status === 'rejected' && k > cur;
         const label = k === 6 && i.status === 'referred' ? statusLabel({ status: 'referred' }, lang) : k === 4 && sub && now ? `${statusLabel({ status: st }, lang)} · ${sub}` : statusLabel({ status: st, verification: k === 6 ? i.verification : undefined }, lang);
         return (
-          <li key={st} className={`step${done ? ' done' : ''}${now ? ' now' : ''}${struck ? ' struck' : ''}${k === 6 && i.status === 'referred' ? ' referred' : ''}`} style={{ ['--c' as string]: STATUS_COLOR[st] }}>
+          <li key={st} className={`step${done ? ' done' : ''}${now ? ' now' : ''}${struck ? ' struck' : ''}${k === 6 && i.status === 'referred' ? ' referred' : ''}`} style={{ ['--c' as string]: STATUS_COLOR[st] }} title={`${statusLabel({ status: st }, lang)}: ${tr(`mean.${st}` as Parameters<typeof tr>[0], lang)}`} tabIndex={0}>
             <span className="dot" />
             <span className="lbl">{label}</span>
             {!compact && t && (
@@ -198,6 +257,8 @@ export function Stepper({ i, compact, safe = false, lang = 'en' }: { i: Incident
         );
       })}
     </ol>
+    <StatusMeanings lang={lang} />
+    </div>
   );
 }
 
@@ -232,7 +293,7 @@ export function ClockRow({ label, due, done, from, at }: { label: string; due?: 
   if (!due) return null;
   const st = clockState(due, done, at, due - from);
   const tone = st === 'met' || st === 'ok' ? 'good' : st === 'due_soon' ? 'warn' : 'bad';
-  const text = done ? `${st === 'met' ? 'met' : 'missed'} · ${hhmm(done)}` : at > due ? `${dur(at - due)} overdue` : `${dur(due - at)} left · by ${hhmm(due)}`;
+  const text = done ? `${st === 'met' ? 'met' : 'missed'} · ${hhmm(done)}` : at > due ? `${dur(at - due)} overdue` : `${dur(due - at)} left · by ${fmtTimeWat(due)}`;
   return (
     <div className="clockrow">
       <span className={`light ${tone}`} />
@@ -332,8 +393,14 @@ export function CaseTable({ rows, at, empty = 'No cases here. New cases appear h
                   {i.area}
                   <div className="tiny muted">{lgaOf(i.lgaId).name}</div>
                 </td>
-                <td className="muted nowrap">{ago(i.createdAt, at)}</td>
-                {showWho && <td className="small">{holderLabel(i)}</td>}
+                <td className="muted nowrap">
+                  <Ago t={i.createdAt} at={at} />
+                </td>
+                {showWho && (
+                  <td className="small">
+                    <WithCell i={i} at={at} />
+                  </td>
+                )}
                 <td>
                   <StatusPill i={i} />
                 </td>
@@ -383,6 +450,17 @@ export function useAlertIds() {
   const s = useStore((x) => x);
   const me = persona();
   return useMemo(() => new Set(alertsFor(s, me).map((a) => a.id)), [s, me]);
+}
+
+/** "With" column: the holder, or "Police Bodija · ⏳ 8 min" while a pass waits for acceptance (§6). */
+export function WithCell({ i, at }: { i: Incident; at: number }) {
+  const c = isOpen(i) ? handoffClock(i, at) : undefined;
+  if (!c) return <>{holderLabel(i)}</>;
+  return (
+    <span className={`cd-cell cd-${c.tone}`} title={c.overdueText ?? `Waiting for ${c.target} to accept`}>
+      {c.target} · <span aria-hidden>⏳</span> {c.left > 0 ? `${Math.max(1, Math.ceil(c.left / MIN))} min` : c.short.toLowerCase()}
+    </span>
+  );
 }
 
 // ---------- toasts ----------
@@ -556,7 +634,7 @@ export function samplePhoto(label: string, tone = '#6b7a52') {
   g.fillRect(0, 286, 480, 34);
   g.fillStyle = '#fff';
   g.font = '600 16px system-ui, sans-serif';
-  g.fillText(`${label} · ${new Date(now()).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`, 12, 309);
+  g.fillText(`${label} · ${fmtDateTime(now())} WAT`, 12, 309);
   return c.toDataURL('image/jpeg', 0.7);
 }
 

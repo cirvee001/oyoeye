@@ -1,11 +1,8 @@
 import { DAY, HOUR, isOpen, isOverdue, median } from './engine';
 import type { CategoryId, Deployment, Incident } from './types';
 
-export const startOfDay = (t: number) => {
-  const d = new Date(t);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-};
+/** Midnight in Oyo (WAT, UTC+1), whatever the machine's time zone. */
+export const startOfDay = (t: number) => Math.floor((t + HOUR) / DAY) * DAY - HOUR;
 
 export function metrics(rows: Incident[], at: number) {
   const acked = rows.filter((i) => i.t.acknowledged);
@@ -84,7 +81,7 @@ export function securityClusters(all: Incident[], at: number, hours = 72) {
       first: Math.min(...xs.map((i) => i.createdAt)),
       last: Math.max(...xs.map((i) => i.createdAt)),
       night: xs.filter((i) => {
-        const h = new Date(i.createdAt).getHours();
+        const h = new Date(i.createdAt + HOUR).getUTCHours(); // hour in Oyo
         return h >= 19 || h < 5;
       }).length,
     }))

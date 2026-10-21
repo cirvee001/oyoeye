@@ -1,3 +1,4 @@
+import { lagosDayStart, lagosHour } from './format';
 import { OYO as dep } from './deployments/oyo';
 import { DAY, HOUR, MIN } from './platform/engine';
 import type { CategoryId, Channel, Identity, Incident, Shift } from './platform/types';
@@ -95,7 +96,7 @@ const SHIFT_OF = (h: number): Shift => (h >= 6 && h < 14 ? 'morning' : h >= 14 &
 
 /** Duty roster at the start of the demo: most staff on the current shift. */
 export function initialDuty(start: number): Record<string, DutyEntry> {
-  const cur = SHIFT_OF(new Date(start).getHours());
+  const cur = SHIFT_OF(lagosHour(start));
   const other: Shift = cur === 'night' ? 'morning' : cur === 'morning' ? 'afternoon' : 'night';
   const duty: Record<string, DutyEntry> = {};
   for (const a of dep.agencies) {
@@ -265,9 +266,8 @@ export function buildSeed(api: SeedApi) {
 
   // Background volume.
   for (let d = 7; d >= 0; d--) {
-    const dayStart = new Date(start - d * DAY);
-    dayStart.setHours(0, 0, 0, 0);
-    const count = d === 0 ? Math.round(48 * (new Date(start).getHours() / 24)) : 44 + Math.floor(R() * 14);
+    const dayStart = new Date(lagosDayStart(start - d * DAY));
+    const count = d === 0 ? Math.round(48 * (lagosHour(start) / 24)) : 44 + Math.floor(R() * 14);
     for (let k = 0; k < count; k++) {
       const category = weighted<Exclude<CategoryId, 'other'>>({ security: 34, flooding: d <= 3 ? 20 : 12, waste: 18, roads: 14, infrastructure: 10, fire: 6 });
       const night = category === 'security' && R() < 0.5;
@@ -301,8 +301,7 @@ export function buildSeed(api: SeedApi) {
   }
 
   // Apata flood cluster this morning: many residents, one master incident.
-  const morning = new Date(start);
-  morning.setHours(6, 50, 0, 0);
+  const morning = new Date(lagosDayStart(start) + 6 * HOUR + 50 * MIN);
   const apataStart = Math.min(morning.getTime(), start - 3 * HOUR);
   for (let k = 0; k < 18; k++) {
     const at = apataStart + k * between(4, 9) * MIN;

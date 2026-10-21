@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { conduct, dep, feedbackFor, findFocalByPhone, getState, incidentByRef, submitReport } from '../store';
+import { fmtTime } from '../format';
+import { now, conduct, dep, feedbackFor, findFocalByPhone, getState, incidentByRef, submitReport } from '../store';
 import { statusLabel, ussdText, type Lang } from '../i18n';
 import type { CategoryId } from '../platform/types';
 import { go } from '../ui';
@@ -236,7 +237,7 @@ export function Ussd() {
       <div className="featurephone">
         <div className="fp-top">
           <span>MTN NG</span>
-          <span>▮▮▮▯ 12:00</span>
+          <span>{`▮▮▮▯ ${fmtTime(now())}`}</span>
         </div>
         <pre className="fp-screen" aria-live="polite" lang={lang}>
           {text()}

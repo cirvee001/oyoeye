@@ -57,6 +57,7 @@ import type {
 } from './platform/types';
 
 import { msg, msgText, type Lang, type Msg } from './strings';
+import { PHONE_HINT, fmtTimeWat, lagosIsoDate, lagosYymmdd, normalisePhone, validPhone } from './format';
 
 export const dep = OYO;
 // v2 changes the status model; old v1 state is ignored and the demo reseeds.
@@ -230,7 +231,7 @@ function notify(at: number, to: (string | undefined)[], kind: NoticeKind, body: 
   if (state.inbox.length > 800) state.inbox.length = 800;
 }
 
-const hhmm = (t: number) => new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+const hhmm = (t: number) => fmtTimeWat(t); // SMS and audit timestamps carry WAT (v2.6 §2)
 const place = (i: Incident) => `${i.area}, ${lgaOf(i.lgaId).name}`;
 
 function alertText(i: Incident, heading = 'OYOEYE ALERT') {
@@ -320,8 +321,7 @@ export function coordsFor(lgaId: string, area: string, salt = '') {
 }
 
 function refFor(code: string, at: number) {
-  const d = new Date(at);
-  const yymmdd = `${String(d.getFullYear()).slice(2)}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  const yymmdd = lagosYymmdd(at);
   state.seq += 1;
   return `${dep.prefix}-${code}-${yymmdd}-${String(state.seq).padStart(5, '0')}`;
 }
@@ -386,7 +386,7 @@ function submitAt(at: number, input: ReportInput) {
     // A1: corroboration counts distinct reporters only.
     if (dup.unverified && distinct >= 2 && before < 2) {
       dup.unverified = false;
-      audit(at, SYSTEM, 'Corroborated', `Distinct reporters: ${distinct}. Marked corroborated (not proven).`, dup.id);
+      audit(at, SYSTEM, `Reported by ${distinct} people`, `${distinct} independent reporters (still not proof).`, dup.id);
     }
     if (SEV_ORDER.indexOf(ai.severity) > SEV_ORDER.indexOf(dup.severity)) {
       audit(at, AI, 'Severity suggestion', `New report suggests ${ai.severity}; current ${dup.severity}. Left for a person to decide.`, dup.id);
@@ -449,7 +449,7 @@ function submitAt(at: number, input: ReportInput) {
   const reporterPerson = person(input.reporter?.personId);
   if (restricted && isVerifiedFocal(reporterPerson)) {
     i.unverified = false;
-    audit(at, SYSTEM, 'Corroborated', 'Verified community focal person — still needs a person to verify; never auto-dispatched', i.id);
+    audit(at, SYSTEM, 'Registered focal person', 'Report from a registered community focal person — still needs a person to verify; never auto-dispatched', i.id);
   }
 
   const heading = input.sos ? 'SOS — OYOEYE' : 'NEW SECURITY REPORT';
@@ -517,12 +517,15 @@ function createHandoff(i: Incident, at: number, from: Person | typeof SYSTEM, to
   i.ackDueAt = at + ackMinutes(i) * MIN;
   i.by.assigned = handoffTarget(h);
   const target = to.personId ? `${person(to.personId)?.name} (${toAgency?.short})` : toAgency?.short;
-  audit(at, from, kind === 'handback' ? 'Handed back' : 'Passed', `Passed from ${fromLabel} to ${target} — ${reason}${note ? `. Note: ${note}` : ''}`, i.id);
+  const fromUnit = from === SYSTEM ? 'OyoEye routing' : agency((from as Person).agencyId)?.short ?? from.name;
+  const what =
+    kind === 'handback' ? `Passed back to ${person(to.personId)?.name ?? toAgency?.short}` : kind === 'control' ? `Passed back to the ${dep.emergencyLine} control room` : kind === 'officer' ? `Passed to ${person(to.personId)?.name}` : i.t.verified === at && from !== SYSTEM ? `Verified and passed to ${target}` : `Passed from ${fromUnit} to ${target}`;
+  audit(at, from, kind === 'handback' || kind === 'control' ? 'Passed back' : 'Passed', `${what} — ${reason}${note ? `. Note: ${note}` : ''}${from === SYSTEM ? '' : ` (by ${fromLabel})`}`, i.id);
   if (!seeding && prev.agencyId !== to.agencyId && toAgency?.kind !== 'control_room') systemPost(to.agencyId, `Case ${i.ref} (${subLabel(i.category, i.subcategory)}, ${i.area}) was passed to this station.`, at);
   const receivers = to.personId ? [to.personId] : agencyManagers(dep, to.agencyId, onDuty).map((p) => p.id);
-  const verb = kind === 'handback' ? 'handed back' : 'passed';
+  const verb = kind === 'handback' || kind === 'control' ? 'passed back' : 'passed';
   notify(at, receivers, 'handoff', `${from === SYSTEM ? 'New case' : `${from.name} ${verb} a case`}: ${subLabel(i.category, i.subcategory)} — ${place(i)}. Reason: ${reason}. Accept within ${ackMinutes(i)} min.`, i, h.id);
-  for (const r of receivers) send(at, person(r), 'whatsapp', alertText(i, kind === 'handback' ? 'OYOEYE — CASE HANDED BACK' : 'OYOEYE — CASE PASSED TO YOU'), i.id);
+  for (const r of receivers) send(at, person(r), 'whatsapp', alertText(i, kind === 'handback' ? 'OYOEYE — CASE PASSED BACK TO YOU' : 'OYOEYE — CASE PASSED TO YOU'), i.id);
   if (i.severity === 'critical' && to.personId) send(at, person(to.personId), 'sms', alertText(i), i.id);
   return h;
 }
@@ -685,7 +688,7 @@ export const actions = {
       if (!v.reason.trim()) return 'Choose a reason';
       if (callbackNeeded(state, i)) return 'Call back the reporter before verifying (Restricted standing)';
       const changes = classify(i, v);
-      if (i.status === 'pending') markVerified(i, at, me, `${i.reports.length > 1 ? 'Corroborated by multiple reports' : 'Operator judgement'}${changes.length ? `. Changed: ${changes.join(', ')}` : ''}`);
+      if (i.status === 'pending') markVerified(i, at, me, `${distinctReporters(i) > 1 ? `Reported by ${distinctReporters(i)} people` : 'Operator judgement'}${changes.length ? `. Changed: ${changes.join(', ')}` : ''}`);
       const to = agency(v.toAgencyId);
       if (!to) return 'Choose who to pass it to';
       if (holdArmed(i, at, me, to, v.reason, v.note)) return;
@@ -722,7 +725,7 @@ export const actions = {
   /** Field officer: hand the case back to their own commander, with a reason. */
   handBack: (id: string, reason: string) =>
     act(id, (i, at, me) => {
-      if (me.role !== 'officer' || i.officerId !== me.id) return 'Only the assigned officer can hand back';
+      if (me.role !== 'officer' || i.officerId !== me.id) return 'Only the assigned officer can pass it back';
       if (!reason.trim()) return 'Give a reason';
       const cmdr = agencyManagers(dep, me.agencyId!, onDuty).find((p) => p.role === 'supervisor') ?? agencyManagers(dep, me.agencyId!, onDuty)[0];
       if (!cmdr) return 'No commander found for your unit';
@@ -1119,7 +1122,7 @@ function createInvite(at: number, me: Person, stationId: string, v: InviteInput,
   if (!a) return 'Station not found';
   if (!v.name.trim()) return 'Enter the full name';
   if (!v.serviceNumber.trim()) return 'Enter the service number';
-  if (!validPhone(v.phone)) return 'Enter a Nigerian mobile number, e.g. 0803 000 0123';
+  if (!validPhone(v.phone)) return PHONE_HINT;
   if (dep.people.some((p) => p.role !== 'citizen' && p.staffStatus !== 'deactivated' && digits(p.phone) === digits(v.phone))) return 'Someone on OyoEye already uses that phone number';
   const p: Person = {
     id: `st${at}${++staffSeq}`,
@@ -1244,7 +1247,7 @@ export function parseStationsCsv(text: string): CsvRow[] {
     if (!lgaIds.length && !errors.some((e) => e.startsWith('Unknown LGA'))) errors.push('No LGA given');
     if (!commander_name) errors.push('Commander name missing');
     if (!commander_service_no) errors.push('Commander service number missing');
-    if (!validPhone(commander_phone)) errors.push('Commander phone is not a Nigerian mobile number');
+    if (!validPhone(commander_phone)) errors.push(`Commander phone: ${PHONE_HINT}`);
     return { line: k + 2, station, organisation, lgas, commander_name, commander_rank, commander_service_no, commander_phone, orgId: o?.id, lgaIds, errors };
   });
 }
@@ -1335,7 +1338,7 @@ export const onboarding = {
     const to = agency(toStationId);
     if (!to || to.id === p.agencyId) return 'Choose the receiving station';
     if (!reason) return 'Choose a reason';
-    if (openCasesOf(p.id).length) return `${p.name} still holds ${openCasesOf(p.id).length} open case(s). Reassign them first.`;
+    if (openCasesOf(p.id).length) return `${p.name} still holds ${openCasesOf(p.id).length} open case(s). Pass them to another officer first.`;
     if (state.transfers.some((t) => t.personId === p.id && t.status === 'pending')) return 'A transfer is already waiting for this officer';
     const at = now();
     const t: Transfer = { id: `tr${at}${++staffSeq}`, personId: p.id, fromStationId: p.agencyId!, toStationId: to.id, reason, effective, byId: me.id, at, status: 'pending' };
@@ -1364,7 +1367,7 @@ export const onboarding = {
       commit();
       return;
     }
-    if (openCasesOf(p.id).length) return `${p.name} still holds open cases at ${from.short}. Their commander must reassign them first.`;
+    if (openCasesOf(p.id).length) return `${p.name} still holds open cases at ${from.short}. Their commander must pass them to another officer first.`;
     t.status = 'accepted';
     p.postings = [...(p.postings ?? []).map((x) => (x.stationId === from.id && !x.to ? { ...x, to: at } : x)), { stationId: to.id, from: at }];
     p.agencyId = to.id;
@@ -1400,7 +1403,7 @@ export const onboarding = {
     const p = person(personId);
     if (!p || !managedStation(me, p)) return 'Not your officer';
     if (!reason.trim()) return 'Give a reason';
-    if (openCasesOf(p.id).length) return `${p.name} still holds ${openCasesOf(p.id).length} open case(s). Reassign them first.`;
+    if (openCasesOf(p.id).length) return `${p.name} still holds ${openCasesOf(p.id).length} open case(s). Pass them to another officer first.`;
     const at = now();
     p.staffStatus = 'deactivated';
     p.postings = (p.postings ?? []).map((x) => (!x.to ? { ...x, to: at } : x));
@@ -1793,7 +1796,7 @@ export const community = {
     const me = persona();
     if (!canManageFocal(me, v.lgaId)) return 'Only the commander covering this LGA or its chairman can invite focal persons';
     if (!v.name.trim() || !v.community.trim()) return 'Enter the name and community';
-    if (!validPhone(v.phone)) return 'Enter a Nigerian mobile number';
+    if (!validPhone(v.phone)) return PHONE_HINT;
     if (dep.people.some((p) => p.role !== 'citizen' && p.staffStatus !== 'deactivated' && digits(p.phone) === digits(v.phone))) return 'Someone on OyoEye already uses that phone number';
     const at = now();
     const p: Person = {
@@ -1824,8 +1827,8 @@ export const community = {
     if (!p || !isFocal(p) || !p.lgaId || !canManageFocal(me, p.lgaId)) return 'Not in your area';
     if (p.staffStatus !== 'active') return p.staffStatus === 'invited' ? 'They must activate their account first' : 'This focal person is suspended';
     p.verified = true;
-    audit(now(), me, 'Focal person verified', `${p.name}, ${p.community}`);
-    notify(now(), [p.id], 'info', `${me.name} verified you as a community focal person for ${p.community}. You can now join your station's community chat.`);
+    audit(now(), me, 'Focal person registered', `${p.name}, ${p.community}`);
+    notify(now(), [p.id], 'info', `${me.name} registered you as a community focal person for ${p.community}. You can now join your station's community chat.`);
     commit();
   },
   suspend: (id: string, reason: string): string | undefined => {
@@ -2501,8 +2504,9 @@ export function staffSignIn(staffId: string, pin: string): string | undefined {
   if (pin !== (p.pin ?? '1234')) return 'Wrong PIN';
   signIn(p.id);
 }
-const digits = (s: string) => s.replace(/\D/g, '').replace(/^234/, '0');
-export const validPhone = (s: string) => /^0[789][01]\d{8}$/.test(digits(s));
+/** v2.6: every phone input and comparison goes through normalisePhone (src/format.ts). */
+const digits = (s: string) => normalisePhone(s) ?? s.replace(/\D/g, '');
+export { validPhone };
 export const citizenByPhone = (phone: string) => [...dep.people, ...state.citizens].find((p) => p.role === 'citizen' && digits(p.phone) === digits(phone));
 export function citizenSignIn(phone: string, firstName?: string) {
   let p = citizenByPhone(phone);
@@ -2522,6 +2526,20 @@ export function markRead(noticeId: string) {
     n.read = true;
     commit();
   }
+}
+/** Opening a case marks all its updates read (v2.6 §4). */
+export function markCaseRead(incidentId: string) {
+  const me = state.signedInId;
+  let n = 0;
+  for (const x of state.inbox) if (x.to === me && x.incidentId === incidentId && !x.read) (x.read = true), n++;
+  if (n) commit();
+}
+/** Marks the given notices read ("Mark all read" on the Updates section). */
+export function markNoticesRead(ids: string[]) {
+  const set = new Set(ids);
+  let n = 0;
+  for (const x of state.inbox) if (set.has(x.id) && !x.read) (x.read = true), n++;
+  if (n) commit();
 }
 export function markAllRead() {
   const me = state.signedInId;
@@ -2735,7 +2753,7 @@ function boot() {
   state = fresh();
   const start = Date.now();
   quietBefore = start - 6 * HOUR;
-  readBefore = start - 20 * MIN;
+  readBefore = start - 2 * HOUR; // v2.6 §4: a believable starting inbox
   seeding = true;
   buildSeed({ start, submitAt: (at, input) => submitAt(at, input).incident, actAt, escalate });
   state.duty = initialDuty(start);
@@ -2753,6 +2771,23 @@ function boot() {
   tick();
   state.incidents.sort((a, b) => b.createdAt - a.createdAt);
   state.alertsSince = Date.now(); // seeded history never rings
+  // v2.6 §4: updates about seeded cases that are already finished have been seen.
+  for (const n of state.inbox) {
+    const i = n.incidentId ? state.incidents.find((x) => x.id === n.incidentId) : undefined;
+    if (i && ['closed', 'rejected', 'referred'].includes(i.status) && n.at < Date.now() - 30 * MIN) n.read = true;
+  }
+  // …and nobody starts with more than 12 unread case groups: older ones count as seen.
+  const byPerson = new Map<string, Map<string, number>>();
+  for (const n of state.inbox) {
+    if (n.read || !n.incidentId) continue;
+    const m = byPerson.get(n.to) ?? new Map<string, number>();
+    m.set(n.incidentId, Math.max(m.get(n.incidentId) ?? 0, n.at));
+    byPerson.set(n.to, m);
+  }
+  for (const [pid, m] of byPerson) {
+    const old = new Set([...m.entries()].sort((a, b) => b[1] - a[1]).slice(12).map(([id]) => id));
+    if (old.size) for (const n of state.inbox) if (n.to === pid && n.incidentId && old.has(n.incidentId)) n.read = true;
+  }
   commit();
 }
 
@@ -2812,7 +2847,7 @@ function seedBroadcast(at: number, personId: string, text: string, lgaIds: strin
 }
 function seedTransfer(at: number, personId: string, toStationId: string, byId: string, reason: string) {
   const p = person(personId)!;
-  const t: Transfer = { id: `tr${at}`, personId, fromStationId: p.agencyId!, toStationId, reason, effective: new Date(at + DAY).toISOString().slice(0, 10), byId, at, status: 'pending' };
+  const t: Transfer = { id: `tr${at}`, personId, fromStationId: p.agencyId!, toStationId, reason, effective: lagosIsoDate(at + DAY), byId, at, status: 'pending' };
   state.transfers.push(t);
   audit(at, person(byId)!, 'Transfer requested', `${p.name}: ${agency(p.agencyId)?.short} → ${agency(toStationId)?.short} (${reason})`);
   notifyTransfer(at, t, person(byId)!);

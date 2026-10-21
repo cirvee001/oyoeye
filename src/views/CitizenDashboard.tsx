@@ -1,3 +1,4 @@
+import { citizenCards } from '../filters';
 import { useState } from 'react';
 import { DAY, isOpen } from '../platform/engine';
 import type { Incident } from '../platform/types';
@@ -7,6 +8,7 @@ import { Card, CatIcon, Icon, StatCard, StatusPill, Stepper, ago, go, run, useNo
 import { ConductForm } from './Citizen';
 import { RulebookCard, RulebookUpdated, StandingBadge, StandingCard } from './RuleBook';
 
+const CARD_KEY: Record<string, 'cd.open' | 'cd.progress' | 'cd.waiting' | 'cd.closed'> = { 'My open reports': 'cd.open', 'In progress': 'cd.progress', 'Waiting for you': 'cd.waiting', Closed: 'cd.closed' };
 const civicConfirm = (i: Incident) => i.status === 'resolved' && !!dep.categories.find((c) => c.id === i.category)?.citizenVerification;
 
 /** Citizen Home as a dashboard (PRD v2.4 §2.2). Stacks on phones. */
@@ -15,9 +17,9 @@ export function CitizenDashboard() {
   const at = useNow();
   const [, t] = useLang();
   const s = useStore((x) => x);
+  const s0 = s;
   const mine = s.incidents.filter((i) => i.reports.some((r) => r.reporter?.personId === me.id)).sort((a, b) => b.createdAt - a.createdAt);
   const refOf = (i: Incident) => i.reports.find((r) => r.reporter?.personId === me.id)!.ref;
-  const waiting = mine.filter((i) => civicConfirm(i) || ((i.status === 'closed' || i.status === 'referred') && !i.officerSos && !feedbackFor(s, refOf(i)) && at - (i.t.closed ?? 0) < 30 * DAY));
   const first = me.name.split(' ')[0];
   return (
     <div className="cdash">
@@ -59,10 +61,9 @@ export function CitizenDashboard() {
       </Card>
 
       <div className="statgrid cd-stats">
-        <StatCard icon="cases" label={t('cd.open')} value={mine.filter((i) => isOpen(i) || i.status === 'resolved').length} tone="blue" onClick={() => go('/my')} />
-        <StatCard icon="clock" label={t('cd.progress')} value={mine.filter((i) => ['accepted', 'in_progress'].includes(i.status)).length} tone="amber" />
-        <StatCard icon="alert" label={t('cd.waiting')} value={waiting.length} sub={waiting.length ? t('cd.waiting.sub') : t('cd.nothing')} tone={waiting.length ? 'amber' : 'grey'} onClick={waiting.length ? () => go(`/track/${refOf(waiting[0])}`) : undefined} />
-        <StatCard icon="done" label={t('cd.closed')} value={mine.filter((i) => i.status === 'closed' || i.status === 'referred').length} tone="green" />
+        {citizenCards(me, s0, at).map((c) => (
+          <StatCard key={c.label} icon={c.icon} label={t(CARD_KEY[c.label])} value={c.value} sub={c.sub ? t(c.label === 'Waiting for you' && c.count ? 'cd.waiting.sub' : 'cd.nothing') : undefined} tone={c.tone} to={c.to} view={t('cd.view')} />
+        ))}
       </div>
 
       <Card title={t('home.mine')} right={<a href="#/my">{t('inbox.viewall')}</a>} className="cd-reports" pad={false}>
@@ -105,7 +106,7 @@ function ReportRow({ i, reportRef, at }: { i: Incident; reportRef: string; at: n
           <b className="cd-title">{i.restricted ? t('cd.secreport') : i.title}</b>
         </span>
         <span className="small muted">{`${i.area} · ${ago(i.createdAt, at, lang)}`}</span>
-        <StatusPill i={i} lang={lang} />
+        <StatusPill i={i} lang={lang} cta={civicConfirm(i)} />
       </a>
       <Stepper i={i} compact safe lang={lang} />
       {civicConfirm(i) && (

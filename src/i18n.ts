@@ -78,7 +78,7 @@ export const ONBOARDING: { title: [string, string]; body: [string, string]; icon
   {
     icon: 'list',
     title: ['Follow your report', 'Tẹ̀lé ìròyìn yín'],
-    body: ['Every report gets a number. You’ll see each step: Pending → Verified → Assigned → In progress → Resolved → Closed. We’ll tell you when it moves.', 'Ìròyìn kọ̀ọ̀kan ní nọ́mbà. Ẹ ó rí ìgbésẹ̀ kọ̀ọ̀kan: Ń dúró → A fìdí múlẹ̀ → A fi ránṣẹ́ → Iṣẹ́ ń lọ → A yanjú → A parí. A ó sọ fún yín tí ó bá yí padà.'],
+    body: ['Every report gets a number. You’ll see each step: Pending → Verified → Assigned → In progress → Resolved → Closed. We’ll tell you when it moves. Resolved means the team says it’s done; Closed means it’s confirmed.', 'Ìròyìn kọ̀ọ̀kan ní nọ́mbà. Ẹ ó rí ìgbésẹ̀ kọ̀ọ̀kan: Ń dúró → A fìdí múlẹ̀ → A fi ránṣẹ́ → Iṣẹ́ ń lọ → A yanjú → A parí. A ó sọ fún yín tí ó bá yí padà. “A yanjú” túmọ̀ sí pé ẹgbẹ́ náà sọ pé ó ti parí; “A parí” túmọ̀ sí pé a ti fìdí rẹ̀ múlẹ̀.'],
   },
   {
     icon: 'security',

@@ -1,3 +1,4 @@
+import { fmtLong, fmtNum, fmtTimeWat, lagosHour } from '../format';
 import { useState, type ReactNode } from 'react';
 import { countBy, hotspots, lastDays, metrics, securityClusters, startOfDay } from '../platform/analytics';
 import { DAY, HOUR, dur, isOpen, isOverdue } from '../platform/engine';
@@ -19,7 +20,7 @@ export function SecurityPicture() {
   const m = metrics(visible, at);
   const triage = visible.filter((i) => i.t.verified).map((i) => i.t.verified! - i.createdAt);
   const clusters = securityClusters(all, at);
-  const hours = Array.from({ length: 24 }, (_, h) => visible.filter((i) => new Date(i.createdAt).getHours() === h).length);
+  const hours = Array.from({ length: 24 }, (_, h) => visible.filter((i) => lagosHour(i.createdAt) === h).length);
   const units = dep.agencies.filter((a) => a.kind === 'police' || a.kind === 'corps');
   const recent = all.filter((i) => i.category === 'security' && !i.sensitiveOnly && i.createdAt > at - 72 * HOUR);
 
@@ -152,14 +153,14 @@ export function Brief() {
       <div className="page-head">
         <div>
           <h1>{dep.product} morning brief</h1>
-          <p>{new Date(at).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })} · generated from platform records</p>
+          <p>{fmtLong(at)} · {fmtTimeWat(at)} · generated from platform records</p>
         </div>
       </div>
       <Ask />
       <div className="grid g2">
         <Card title="Yesterday">
           <div className="stats" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-            <Stat k="Citizen reports" v={m.reports.toLocaleString()} />
+            <Stat k="Citizen reports" v={fmtNum(m.reports)} />
             <Stat k="Resolved" v={m.resolved} />
             <Stat k="Still active" v={m.open} />
             <Stat k="Awaiting citizen confirmation" v={yest.filter((i) => i.status === 'resolved' && cat(i.category).citizenVerification).length} />
@@ -470,7 +471,7 @@ export function Transparency() {
         </div>
       </div>
       <div className="stats">
-        <Stat k="Reports this period" v={(m.reports + sm.reports).toLocaleString()} />
+        <Stat k="Reports this period" v={fmtNum(m.reports + sm.reports)} />
         <Stat k="Civic issues resolved" v={m.resolved} s={pct(m.resolved, m.total)} />
         <Stat k="Median civic resolution" v={dur(m.medianResolve)} />
         <Stat k="Confirmed fixed by citizens" v={pct(m.verifiedYes, m.verified)} />

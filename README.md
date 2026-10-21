@@ -102,12 +102,15 @@ on the case timeline.
    *Cases → Pending review*. The chime repeats every 30 s until someone opens it. Press **View**:
    the sound stops (for every operator), the row is no longer tinted. The speaker in the top bar has
    **Mute for 15 min** (audited); if the browser blocked sound, click the "Click to enable alert
-   sound" chip. On the case: the Credibility card sits next to the Reporter card. **Verify & pass to unit** → *Police
-   Bodija* (reason "Covers this area" is preselected). Status goes *Verified* →
-   *Assigned* with **Handoff pending → Police Bodija**.
-3. **Unit Commander (OY-POL-014).** Bell → the handoff (or *Cases → To accept*). Open
-   it, **Accept for unit**, then **Assign officer** → *Insp. Grace Olatunji* (the
-   "Pass case" modal shows a green success banner).
+   sound" chip. On the case: the Credibility card sits next to the Reporter card. **Verify & pass** → *Pass to another
+   unit or agency* → *Police Bodija* (reason "Covers this area" is preselected). Toast: "Passed to Police
+   Bodija. They have 10 min to accept." Status goes *Verified* → *Assigned*, and under the title a live
+   countdown: "Waiting for them to accept · 10 min left" (amber when a quarter is left, red when overdue).
+3. **Unit Commander (OY-POL-014).** The bell count is *action items + unread case groups*. The inbox
+   is calm: **Needs your action** on top (SOS first, then officer-help requests, then passes to accept:
+   "Pass from 615 control room · 8 min left to accept"), then **Updates**, one row per case. Open the
+   case ("You have 8 min left to accept"), **Accept for unit**, then **Pass case** → *Pass to an officer*
+   → *Insp. Grace Olatunji* (the modal shows a green success banner).
 4. **Field Officer (OY-POL-102)**, phone layout: **Accept** → **En route** →
    **On scene** → **Add update** "Two suspects fled toward Bodija market" →
    **Request backup** (Duty Lead's bell lights up) → **Mark resolved** with
@@ -116,9 +119,10 @@ on the case timeline.
    stepper with times; it says "A security unit", never a name. The reporter's
    identity was never stored.
 6. **Escalation.** As Grace, *My cases* has a seeded armed-persons case at Samonda
-   that she has not accepted. Do not accept; press **+15m** → it escalates to the
+   that she has not accepted: her inbox shows the pass with its countdown. Do not accept; press **+15m** →
+   the countdown turns red ("Overdue by … — escalated to CSP Rasheed Lawal") and it escalates to the
    Commander (L2) and the Control-room Duty Lead (L3); both get inbox entries.
-7. **Handoff with decline.** As the Commander, open the seeded *Sango* armed case
+7. **Pass with decline.** As the Commander, open the seeded *Sango* armed case
    (*Cases → Accepted*; no officer yet) → **Pass case** → *Unit / agency* → *Amotekun Ibadan*, reason
    "Outside our area". Switch to **Comdr. Adegoke (OY-AMO-007)** → **Decline**
    "Needs armed response — firearms reported". It returns to Police Bodija; the
@@ -164,7 +168,7 @@ on the case timeline.
     in his chat; the duty lead sees "Acknowledged by 1 of 3 stations".
 16. **Transfer.** CSP Lawal → *My officers* → Grace → *Actions ▾* → **Transfer to another
     station** → *Amotekun Ibadan*. If she holds open cases the modal lists them: use
-    *Reassign all to…* Cpl. Bayo Adeleke first. Comdr. Adegoke accepts in his inbox (or on
+    *Pass all cases to…* Cpl. Bayo Adeleke first. Comdr. Adegoke accepts in his inbox (or on
     *My officers*). Grace's chat list now shows Amotekun Ibadan, and the Police Bodija chat
     says "Insp. Grace Olatunji was transferred out".
 
@@ -190,7 +194,7 @@ messages. Normal messages only raise the Chat unread count; urgent messages, bro
 18. **Focal person report.** Sign in as **Baba Lasisi** (card, or Citizen tab: 0803 000 0201 + PIN
     1234) → *Report for my community* → "Strange men with guns camping near the farm settlement,
     two motorcycles" → *Ibarapa North → Igangan* → How do you know: *Group members are at the
-    scene*, 6 at risk, *Our group can assist*. The operator sees "Verified community focal person —
+    scene*, 6 at risk, *Our group can assist*. The operator sees "Registered focal person —
     Ode (hunters) group, Igangan · 9 of 10 past reports confirmed", verifies and passes to **Police
     Ibarapa**. The outbox has the SMS to the Baale of Igangan; the timeline says "Community leader
     notified". (Kidnapping notices wait for the coordinator's approval — Rules → Community notices.)
@@ -212,7 +216,7 @@ messages. Normal messages only raise the Chat unread count; urgent messages, bro
     The duty lead opens the case → **Officer safe** with a debrief note. *Silent SOS*: avatar menu →
     Silent SOS, or tap the logo 3 times quickly — the officer's screen does not change.
 23. **Missed check-in.** Grace, on her Iroko case from step 17 (or any case Comdr. Adegoke assigns
-    via *My officers → Assign case*), goes **On scene** and taps **I'm alone on this job**.
+    via *My officers → Pass a case to Insp. Grace Olatunji*), goes **On scene** and taps **I'm alone on this job**.
     Press **+15m**: the full-screen "Are you OK?" appears. Don't answer; press **+15m** again: a
     *Missed check-in* Officer SOS is raised automatically. The duty lead's list shows "Alone on
     scene · Nm" while the timer runs.
@@ -243,6 +247,33 @@ messages. Normal messages only raise the Chat unread count; urgent messages, bro
     first asks **Have you called back?** (Yes / Couldn't reach). Barr. Adeyemi → *Complaints* → the
     "Standing appeal" → **Uphold appeal**: the hoax marks are removed (audited) and Bose's standing
     recalculates. Bose's SOS is always answered, whatever her standing.
+
+### Clarity and consistency (PRD v2.6) — no new features
+
+- **One set of words (§1).** Every way of giving a case to someone is **Pass case**; the modal's options
+  say *Pass to another unit or agency*, *Pass to an officer*, *Pass back to my commander* or *Pass back
+  to the control room*, and the timeline says "Passed from Police Bodija to Amotekun Ibadan", "Passed to
+  Insp. Grace Olatunji", "Passed back to …", "Verified and passed to …". **Transfer** now only means
+  posting an officer to another station (My officers, Stations). "Corroborated" became **"Reported by N
+  people"** / **"Single report"**; focal persons are **Registered**. "What do these mean?" next to every
+  stepper; citizens see **"Resolved — please confirm"** when they need to act.
+- **Nigerian formats (§2).** Always Oyo time (Africa/Lagos, WAT) whatever the laptop's time zone; 12-hour
+  "2:15 pm"; dates "20/10/2026", "Tue 20 Oct 2026"; WAT on case headers, SLA due times, the audit log,
+  the printed Rule Book and SMS timestamps; numbers "1,234", percentages "45%" / "3.1%". Phone numbers
+  are accepted as 0803 000 0001, 08030000001, 803 000 0001, +234 803 000 0001, +2348030000001 or
+  2348030000001 — one `normalisePhone()` everywhere — and shown as 0803 000 0001.
+- **Clickable number cards (§3).** Every Overview and citizen-dashboard card is a link ("View →") to the
+  list it counts, with the filters in the URL (`#/cases?tab=all&status=open&priority=critical`), so Back
+  works and links can be shared. Step 10: the Governor's cards open Cases or Reports; step 24: Adewale's
+  "Waiting for you" opens My reports filtered.
+- **A calmer inbox (§4).** *Needs your action* (SOS → officer-help → passes to accept → other decisions)
+  can't be marked read until it's done; *Updates* are grouped by case ("3 updates"); chips All · Needs
+  action · Unread; opening a case marks its updates read; the bell shows the same count as the page.
+- **Key steps (§5).** Case timelines open on *Key steps*; *Everything (N more)* adds triage, routing and
+  messages; 3+ repeated system entries collapse ("4 messages sent · show"). Try it on any seeded case.
+- **Live handoff countdown (§6).** Inbox, case banner ("Waiting for Police Bodija to accept · 8 min left"),
+  and the Cases "With" column ("Police Bodija · ⏳ 8 min"); amber at 25% left; red when overdue: "Overdue by
+  3 min — escalated to CSP Rasheed Lawal". Steps 2–3 and 6 show it (press **+15m**).
 
 ### Flow polish (PRD v2.5) — no new features
 
@@ -285,7 +316,8 @@ hundreds of closed cases across all 33 LGAs.
 
 One plain-language status everywhere: **Pending review → Verified → Assigned →
 Accepted → In progress → Resolved → Closed**, plus *Reopened*, *Rejected* and
-*Referred*. Flags (not statuses): Escalated L2–L5, Overdue, Uncorroborated, SOS,
+*Referred*. "What do these mean?" next to every stepper explains each one in a line. Flags (not
+statuses): Escalated L2–L5, Overdue, "Reported by N people" / "Single report", SOS,
 Backup requested, Handoff pending.
 
 - **Handoffs** ("Pass case") need the receiver to **Accept** or **Decline (reason)**.
@@ -304,7 +336,7 @@ Backup requested, Handoff pending.
 | Routing matrix (most specific rule wins, coverage-based targets) | AI triage (keyword rules; English, Yoruba, Pidgin) |
 | Handoffs with accept/decline, SLA clocks, escalation ladder | OTP, SMS, WhatsApp, push (written to an outbox) |
 | Duty roster: on-duty people first, then the next role up | GPS ("Simulate my location" in Demo controls); map tiles from OpenStreetMap |
-| Duplicate merging; corroboration by distinct reporters | Voice notes, USSD, 615 telephony |
+| Duplicate merging; "Reported by N people" counts distinct reporters | Voice notes, USSD, 615 telephony |
 | Evidence before resolve; citizen confirmation and reopen | Database (`localStorage`) |
 | Role-based access, sealed/anonymous identities, break-glass | |
 | Hash-chained, append-only audit log | |
@@ -333,7 +365,7 @@ Backup requested, Handoff pending.
 
 - No security report is dispatched automatically; a person verifies every one.
   "A report is an allegation, not proof" is shown at review.
-- Corroboration counts **distinct** reporters (same phone twice is one reporter;
+- "Reported by N people" counts **distinct** reporters (same phone twice is one reporter;
   anonymous reports count as distinct only by channel).
 - No SMS/WhatsApp to confidential reporters or on sensitive types (GBV,
   kidnapping, tips) unless they opted in; messages never name the case type.

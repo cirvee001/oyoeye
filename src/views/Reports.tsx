@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Tabs } from '../ui';
+import { Tabs, useQuery } from '../ui';
 import { Brief, Performance, SecurityPicture } from './Dashboards';
 import { ConductReport, SafetyReport } from './Safety';
 
@@ -7,7 +7,8 @@ type T = 'security' | 'performance' | 'brief' | 'conduct' | 'safety';
 
 /** One "Reports" page with tabs, reusing the existing report views. */
 export function Reports() {
-  const [tab, setTab] = useState<T>('security');
+  const q = useQuery().get('tab') as T | null;
+  const [tab, setTab] = useState<T>(q && ['security', 'performance', 'brief', 'conduct', 'safety'].includes(q) ? q : 'security');
   return (
     <section className="card reports">
       <div className="wl-head">

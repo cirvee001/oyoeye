@@ -1,3 +1,4 @@
+import { PHONE_HINT, fmtDate } from '../format';
 import { useRef, useState } from 'react';
 import { isActive } from '../platform/engine';
 import type { AgencyKind, Station } from '../platform/types';
@@ -223,7 +224,7 @@ function AddStation({ onClose }: { onClose: () => void }) {
             <input className="input" value={c.phone} onChange={(e) => setC({ ...c, phone: e.target.value })} placeholder="Phone, e.g. 0806 111 2233" aria-label="Commander phone" />
           </div>
         )}
-        {mode === 'invite' && c.phone && !validPhone(c.phone) && <span className="small muted">Enter a Nigerian mobile number.</span>}
+        {mode === 'invite' && c.phone && !validPhone(c.phone) && <span className="small muted">{PHONE_HINT}</span>}
         <button className="btn primary lg block" disabled={!name.trim() || !lgaIds.length} onClick={save}>
           Save station (Setting up)
         </button>
@@ -350,7 +351,7 @@ export function StationPage({ id }: { id: string }) {
               ['Station phone', a.phone],
               ['Address', a.address],
               ['Landmark', a.landmark],
-              ['Created', a.createdAt ? new Date(a.createdAt).toLocaleDateString('en-GB') : 'At launch'],
+              ['Created', a.createdAt ? fmtDate(a.createdAt) : 'At launch'],
               ['Routing', (a.status ?? 'live') === 'live' ? 'Receives new cases' : 'Skipped until live'],
             ] as [string, string | undefined][]
           ).map(([k, v]) => (

@@ -1,8 +1,10 @@
+import { fmtNum } from '../format';
 import { useState } from 'react';
 import { SEVERITIES, route } from '../platform/engine';
 import type { CategoryId, RoutingRule, Shift } from '../platform/types';
 import { dep, getState, removeRule, setDuty, subLabel, updateRule, updateSla, useStore, verifyChain } from '../store';
-import { Card, dayTime, go } from '../ui';
+import { Card, dayTime, go, useQuery } from '../ui';
+import { dutyFilter } from '../filters';
 
 const TARGETS = [
   { id: '@police', label: 'Police unit covering the LGA' },
@@ -233,7 +235,7 @@ export function Sla() {
 
 export function AuditLog() {
   const audit = useStore((s) => s.audit);
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(useQuery().get('q') ?? '');
   const [check, setCheck] = useState<ReturnType<typeof verifyChain>>();
   const incidents = getState().incidents;
   const refOf = (id?: string) => incidents.find((i) => i.id === id)?.ref;
@@ -254,7 +256,7 @@ export function AuditLog() {
           Verify chain
         </button>
       </div>
-      {check && <div className={`notice ${check.ok ? 'good' : 'bad'}`}>{check.ok ? `Chain intact — ${audit.length.toLocaleString()} entries verified.` : `Chain broken at entry ${check.brokenAt}.`}</div>}
+      {check && <div className={`notice ${check.ok ? 'good' : 'bad'}`}>{check.ok ? `Chain intact — ${fmtNum(audit.length)} entries verified.` : `Chain broken at entry ${check.brokenAt}.`}</div>}
       <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter by case reference, person or action (e.g. UNSEALED, Escalated, Routing rule)" />
       <Card pad={false}>
         <div className="table-wrap">
@@ -274,7 +276,7 @@ export function AuditLog() {
               {rows.map((e) => (
                 <tr key={e.seq}>
                   <td className="tnum small muted">{e.seq}</td>
-                  <td className="small tnum">{dayTime(e.at)}</td>
+                  <td className="small tnum nowrap">{`${dayTime(e.at)} WAT`}</td>
                   <td className="small">{e.actor}</td>
                   <td className="small">
                     <b style={{ color: e.action === 'IDENTITY UNSEALED' ? 'var(--sealed)' : undefined }}>{e.action}</b>
@@ -333,9 +335,12 @@ const SHIFTS: { id: Shift; label: string }[] = [
 /** Escalation and auto-assignment pick on-duty people first, then the next role up. */
 export function DutyRoster() {
   const duty = useStore((s) => s.duty);
+  const show = useQuery().get('show') ?? '';
   const [q, setQ] = useState('');
-  const [agencyId, setAgencyId] = useState('pol-bdj');
-  const staff = dep.people.filter((p) => p.role !== 'citizen' && p.agencyId && (q ? `${p.name} ${p.staffId}`.toLowerCase().includes(q.toLowerCase()) : p.agencyId === agencyId));
+  const [agencyId, setAgencyId] = useState(show ? '' : 'pol-bdj');
+  // ?show=all / ?show=on come from the Overview cards (v2.6 §3)
+  const listed = show && !agencyId && !q ? dutyFilter(getState(), show) : undefined;
+  const staff = listed ?? dep.people.filter((p) => p.role !== 'citizen' && p.agencyId && (q ? `${p.name} ${p.staffId}`.toLowerCase().includes(q.toLowerCase()) : p.agencyId === agencyId));
   const units = dep.agencies.filter((a) => dep.people.some((p) => p.agencyId === a.id));
   return (
     <>
@@ -346,7 +351,8 @@ export function DutyRoster() {
         </div>
       </div>
       <div className="row">
-        <select className="input" style={{ width: 280 }} value={agencyId} onChange={(e) => (setAgencyId(e.target.value), setQ(''))}>
+        <select className="input" style={{ width: 280 }} value={agencyId} onChange={(e) => (setAgencyId(e.target.value), setQ(''))} aria-label="Unit">
+          {show && <option value="">{show === 'on' ? `Everyone on duty now (${staff.length})` : `All staff (${staff.length})`}</option>}
           {units.map((a) => (
             <option key={a.id} value={a.id}>
               {a.name}

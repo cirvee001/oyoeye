@@ -1,6 +1,7 @@
+import { fmtDate, fmtDateTimeWat } from '../format';
 import { useState } from 'react';
 import { AGREE, KEY_RULES, ONBOARDING, RULES, RULES_CLOSING, errText, pick, useLang } from '../i18n';
-import { acceptRulebook, persona, rulebookUpdated, seenRulebookUpdate, signedIn, standing, standingFor, useStore, type Standing } from '../store';
+import { getState, now, acceptRulebook, persona, rulebookUpdated, seenRulebookUpdate, signedIn, standing, standingFor, useStore, type Standing } from '../store';
 import { Card, Icon, Sheet, go, run } from '../ui';
 import type { Params, StrKey } from '../strings';
 import { LangToggle } from './Citizen';
@@ -124,7 +125,7 @@ export function RuleBookPage() {
         </div>
         <div className="bd">
           {me.rulebookAcceptedAt && (
-            <p className="small muted">{t('rb.accepted', { date: new Date(me.rulebookAcceptedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }), v: me.rulebookAcceptedVersion ?? 1 })}</p>
+            <p className="small muted">{t('rb.accepted', { date: fmtDate(me.rulebookAcceptedAt), v: me.rulebookAcceptedVersion ?? 1 })}</p>
           )}
           <ol className="rules">
             {RULES.map((_, k) => (
@@ -132,6 +133,7 @@ export function RuleBookPage() {
             ))}
           </ol>
           <p className="rules-closing">{pick(RULES_CLOSING, lang)}</p>
+          <p className="tiny muted print-stamp">{`OyoEye Rule Book v${getState().rulebookVersion} · ${fmtDateTimeWat(now())}`}</p>
           <div className="row">
             {signedIn() && (
               <button className="btn" onClick={() => go('/onboarding')}>
@@ -213,7 +215,7 @@ export function StandingCard() {
                 </li>
               ))}
             </ul>
-            <p className="small muted">{t('sd.until', { date: sd.until ? new Date(sd.until).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—' })}</p>
+            <p className="small muted">{t('sd.until', { date: sd.until ? fmtDate(sd.until) : '—' })}</p>
             {pending ? (
               <div className="notice small">{t('sd.pending', { id: pending.id })}</div>
             ) : (

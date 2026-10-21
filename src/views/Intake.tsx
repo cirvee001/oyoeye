@@ -1,3 +1,4 @@
+import { PHONE_HINT, displayPhone, validPhone } from '../format';
 import { useState } from 'react';
 import { LocationStep, placeFromPoint, type Place } from './Location';
 import type { CategoryId, Identity } from '../platform/types';
@@ -35,7 +36,7 @@ export function Intake() {
       identity,
       channel: 'call_615',
       callRef,
-      reporter: identity === 'anonymous' ? undefined : { name: name || 'Caller', phone: phone || undefined },
+      reporter: identity === 'anonymous' ? undefined : { name: name || 'Caller', phone: phone ? displayPhone(phone) : undefined },
       actor: me,
     });
     const civicRouted = !res.incident.restricted && res.incident.status !== 'pending';
@@ -132,7 +133,8 @@ export function Intake() {
                 </label>
                 <label className="field">
                   <span>Call-back number</span>
-                  <input className="input" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                  <input className="input" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0803 000 0001" aria-invalid={(!!phone && !validPhone(phone)) || undefined} />
+                  {!!phone && !validPhone(phone) && <span className="field-err">{PHONE_HINT}</span>}
                 </label>
                 {identity === 'confidential' && <div className="notice sealed small">Sealed: only restricted-cases officers can unseal it, and every unseal is logged.</div>}
               </>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Complaint, ComplaintStatus } from '../platform/types';
 import { agency, complainantUnsealed, decideAppeal, lgaOf, oversight, person, persona, standingFor, subLabel, useStore } from '../store';
-import { Card, Chips, CountTitle, Icon, Sheet, StatusPill, Tabs, ago, dayTime, go, run, useNow } from '../ui';
+import { Card, Chips, CountTitle, Icon, Sheet, StatusPill, Tabs, ago, dayTime, go, run, useNow, useQuery } from '../ui';
 import { CaseTimeline } from './CaseView';
 
 const STATUS: Record<ComplaintStatus, string> = { new: 'New', review: 'Under review', referred: 'Referred', closed: 'Closed' };
@@ -17,7 +17,8 @@ export function Complaints() {
   const at = useNow();
   const rows = useStore((s) => s.complaints);
   const incidents = useStore((s) => s.incidents);
-  const [tab, setTab] = useState<ComplaintStatus>('new');
+  const q = useQuery().get('status') as ComplaintStatus | null;
+  const [tab, setTab] = useState<ComplaintStatus>(q && q in STATUS ? q : 'new');
   const shown = rows.filter((c) => c.status === tab);
   return (
     <section className="card worklist">

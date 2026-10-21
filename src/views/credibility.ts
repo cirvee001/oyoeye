@@ -1,3 +1,4 @@
+import { samePhone } from '../format';
 import { MIN, distinctReporters, km } from '../platform/engine';
 import type { Incident } from '../platform/types';
 import { FOCAL_GROUPS as FOCAL_LABEL, getState, person, standingOfReport } from '../store';
@@ -6,15 +7,15 @@ import { FOCAL_GROUPS as FOCAL_LABEL, getState, person, standingOfReport } from 
 export function credibility(i: Incident, all: Incident[]) {
   const out: { tone: 'good' | 'warn' | 'bad' | ''; text: string }[] = [];
   const n = distinctReporters(i);
-  out.push(n > 1 ? { tone: 'good', text: `${n} distinct reporters within ${Math.round((Math.max(...i.reports.map((r) => r.submittedAt)) - i.createdAt) / MIN)} min` } : { tone: '', text: i.reports.length > 1 ? `${i.reports.length} reports but from the same source — not corroborated` : 'Single report — not yet corroborated' });
+  out.push(n > 1 ? { tone: 'good', text: `Reported by ${n} people within ${Math.round((Math.max(...i.reports.map((r) => r.submittedAt)) - i.createdAt) / MIN)} min` } : { tone: '', text: i.reports.length > 1 ? `${i.reports.length} reports but from the same source — counts as a single report` : 'Single report' });
   const near = all.filter((x) => x.id !== i.id && x.category === 'security' && Math.abs(x.createdAt - i.createdAt) < 72 * 60 * MIN && km(x.lat, x.lng, i.lat, i.lng) < 2);
   if (near.length) out.push({ tone: 'warn', text: `${near.length} other security reports within 2 km in 72h` });
   const r = i.reports[0];
-  // v2.3: verified community focal persons are a strong signal (still verified by a person).
+  // v2.3: registered community focal persons are a strong signal (still verified by a person).
   const fp = person(r.reporter?.personId);
   if (fp?.role === 'focal' && fp.verified && (fp.staffStatus ?? 'active') === 'active') {
     const h = fp.history ?? { reports: 0, confirmed: 0, false: 0 };
-    out.unshift({ tone: 'good', text: `Verified community focal person — ${FOCAL_LABEL[fp.focalGroup ?? 'youth']}, ${fp.community} · ${h.confirmed} of ${h.reports} past reports confirmed` });
+    out.unshift({ tone: 'good', text: `Registered focal person — ${FOCAL_LABEL[fp.focalGroup ?? 'youth']}, ${fp.community} · ${h.confirmed} of ${h.reports} past reports confirmed` });
     if (r.focal) {
       out.push({ tone: 'good', text: `How they know: ${r.focal.how === 'at_scene' ? 'group members are at the scene' : r.focal.how === 'saw' ? 'saw it themselves' : 'someone in the community told them'}${r.focal.atRisk ? ` · ${r.focal.atRisk} people at risk` : ''}` });
       if (r.focal.canAssist) out.push({ tone: 'warn', text: 'Their group offers to assist — the operator decides; never dispatch civilians' });
@@ -37,7 +38,7 @@ export function credibility(i: Incident, all: Incident[]) {
   } else if (r.identity === 'confidential') out.push({ tone: '', text: 'Confidential reporter — history held by restricted desk' });
   const phone = r.reporter?.phone;
   if (phone) {
-    const recent = all.flatMap((x) => x.reports).filter((x) => x.reporter?.phone === phone && Math.abs(x.submittedAt - r.submittedAt) < 60 * MIN).length;
+    const recent = all.flatMap((x) => x.reports).filter((x) => samePhone(x.reporter?.phone, phone) && Math.abs(x.submittedAt - r.submittedAt) < 60 * MIN).length;
     if (recent > 2) out.push({ tone: 'bad', text: `Rate limit: ${recent} reports from this number in 1h` });
   }
   if (r.photo) out.push({ tone: 'good', text: 'Photo attached' });

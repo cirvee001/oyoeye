@@ -1,3 +1,5 @@
+import { PHONE_HINT } from '../format';
+import { lagosIsoDate } from '../format';
 import { useState } from 'react';
 import { isActive, isLive, isOpen, pendingHandoff } from '../platform/engine';
 import type { Person, Shift, StationRole } from '../platform/types';
@@ -148,7 +150,7 @@ function OfficersList() {
                               <>
                                 {active && (
                                   <button className="menu-item" onClick={() => setModal({ kind: 'assign', p })}>
-                                    Assign case
+                                    {`Pass a case to ${p.name}`}
                                   </button>
                                 )}
                                 {active && !out && (
@@ -301,7 +303,7 @@ function InviteSheet({ stationId, onClose }: { stationId: string; onClose: () =>
             <span>Phone</span>
             <input className="input" inputMode="tel" value={v.phone} onChange={(e) => setV({ ...v, phone: e.target.value })} placeholder="0803 000 0123" />
           </label>
-          {v.phone.length > 6 && !validPhone(v.phone) && <span className="small clk bad">Enter a Nigerian mobile number, e.g. 0803 000 0123</span>}
+          {v.phone.length > 6 && !validPhone(v.phone) && <span className="small clk bad">{PHONE_HINT}</span>}
           <div className="field">
             <span>Role at station</span>
             <div className="radios">
@@ -345,7 +347,7 @@ function InviteMany({ stationId, onClose }: { stationId: string; onClose: () => 
   );
 }
 
-/** Transfer or deactivate: open cases must be reassigned first. */
+/** Transfer or deactivate: open cases must be passed to another officer first. */
 function MoveSheet({ p, kind, onClose }: { p: Person; kind: 'transfer' | 'deactivate'; onClose: () => void }) {
   const me = persona();
   const incidents = useStore((s) => s.incidents);
@@ -357,10 +359,10 @@ function MoveSheet({ p, kind, onClose }: { p: Person; kind: 'transfer' | 'deacti
     .sort((a, b) => Number(b.organisationId === myOrg) - Number(a.organisationId === myOrg) || a.short.localeCompare(b.short));
   const [to, setTo] = useState('');
   const [reason, setReason] = useState(kind === 'transfer' ? 'Posting' : '');
-  const [effective, setEffective] = useState(new Date(Date.now() + 86_400_000).toISOString().slice(0, 10));
+  const [effective, setEffective] = useState(lagosIsoDate(Date.now() + 86_400_000));
   const [reassignTo, setReassignTo] = useState('');
   const reassignAll = () => {
-    if (!reassignTo) return run('Choose who takes the cases');
+    if (!reassignTo) return run('Choose who the cases are passed to');
     for (const i of open) {
       const err = actions.passCase(i.id, { toAgencyId: p.agencyId!, toPersonId: reassignTo, reason: kind === 'transfer' ? 'Officer transferred' : 'Officer leaving the station' });
       if (err) return run(err);
@@ -373,7 +375,7 @@ function MoveSheet({ p, kind, onClose }: { p: Person; kind: 'transfer' | 'deacti
         {open.length > 0 ? (
           <div className="notice warn stack">
             <b>
-              {p.name} holds {open.length} open case{open.length === 1 ? '' : 's'}. Reassign {open.length === 1 ? 'it' : 'them'} first.
+              {p.name} holds {open.length} open case{open.length === 1 ? '' : 's'}. Pass {open.length === 1 ? 'it' : 'them'} to another officer first.
             </b>
             {open.map((i) => (
               <div key={i.id} className="row between small">
@@ -384,8 +386,8 @@ function MoveSheet({ p, kind, onClose }: { p: Person; kind: 'transfer' | 'deacti
               </div>
             ))}
             <div className="row">
-              <select className="input" style={{ flex: 1 }} value={reassignTo} onChange={(e) => setReassignTo(e.target.value)} aria-label="Reassign all to">
-                <option value="">Reassign all to…</option>
+              <select className="input" style={{ flex: 1 }} value={reassignTo} onChange={(e) => setReassignTo(e.target.value)} aria-label="Pass all cases to">
+                <option value="">Pass all cases to…</option>
                 {others.map((x) => (
                   <option key={x.id} value={x.id}>
                     {x.name}
@@ -393,7 +395,7 @@ function MoveSheet({ p, kind, onClose }: { p: Person; kind: 'transfer' | 'deacti
                 ))}
               </select>
               <button className="btn primary" onClick={reassignAll}>
-                Reassign all
+                Pass all
               </button>
             </div>
           </div>

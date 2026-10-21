@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { isOpen } from '../platform/engine';
 import type { CategoryId, Identity, Incident } from '../platform/types';
 import { catLabel, errText, msgText, statusExplain, useLang, type StrKey } from '../i18n';
-import { actions, addSosLocation, agency, conduct, dep, feedbackFor, incidentByRef, lgaOf, persona, setLang, signedIn, submitReport, suggest, subLabel, useStore } from '../store';
+import { markCaseRead, actions, addSosLocation, agency, conduct, dep, feedbackFor, incidentByRef, lgaOf, persona, setLang, signedIn, submitReport, suggest, subLabel, useStore } from '../store';
 import { AnonRules, anonRulesSeen } from './RuleBook';
 import { AreaPickers, LocationStep, PlaceChip, placeFromPoint, useLocator, type Place } from './Location';
-import { CatIcon, Icon, PhotoInput, StatusPill, Stepper, ago, go, hhmm, run, useNow } from '../ui';
+import { CatIcon, Icon, PhotoInput, StatusPill, Stepper, ago, go, hhmm, run, useNow, useQuery } from '../ui';
+import { myReports } from '../filters';
 
 const TILES: CategoryId[] = ['security', 'fire', 'flooding', 'roads', 'waste', 'infrastructure', 'other'];
 const SOS_TILES: CategoryId[] = ['security', 'fire', 'flooding', 'other'];
@@ -558,11 +559,19 @@ export function MyReports() {
   const me = persona();
   const at = useNow();
   const [lang, t] = useLang();
-  const incidents = useStore((s) => s.incidents);
-  const mine = incidents.filter((i) => i.reports.some((r) => r.reporter?.personId === me.id));
+  const s = useStore((x) => x);
+  const f = useQuery().get('f') ?? undefined;
+  const mine = myReports(me, s, at, f);
+  const FKEY: Record<string, 'cd.open' | 'cd.progress' | 'cd.waiting' | 'cd.closed'> = { open: 'cd.open', progress: 'cd.progress', waiting: 'cd.waiting', closed: 'cd.closed' };
   return (
     <div className="phone">
       <h1>{t('home.mine')}</h1>
+      {f && FKEY[f] && (
+        <div className="row between my-filter">
+          <span className="chip on">{t('my.filter', { f: t(FKEY[f]) })}</span>
+          <a href="#/my">{t('my.all')}</a>
+        </div>
+      )}
       <a className="misconduct-link" href="#/misconduct">
         {t('my.misconduct')}
       </a>
@@ -581,7 +590,7 @@ export function MyReports() {
                 <CatIcon c={i.category} size={18} />
                 <span className="mono small">{r.ref}</span>
               </span>
-              <StatusPill i={i} lang={lang} />
+              <StatusPill i={i} lang={lang} cta={!!confirm} />
             </div>
             <b>{i.restricted ? (lang === 'yo' ? catLabel(i.category, lang) : subLabel(i.category, i.subcategory)) : i.title}</b>
             <Stepper i={i} compact safe lang={lang} />
@@ -610,6 +619,9 @@ export function Track({ initial }: { initial?: string }) {
   useNow(5000);
   const i = q ? incidentByRef(q) : undefined;
   const r = i?.reports.find((x) => x.ref === q.trim().toUpperCase()) ?? i?.reports[0];
+  useEffect(() => {
+    if (i && signedIn()) markCaseRead(i.id);
+  }, [i?.id]);
   const civicConfirm = i && i.status === 'resolved' && dep.categories.find((c) => c.id === i.category)?.citizenVerification;
   const who = !i ? '' : i.status === 'pending' || i.status === 'verified' ? (i.restricted ? t('t.control') : t('t.central')) : i.restricted ? t('t.secunit') : agency(i.agencyId)?.short;
   return (
@@ -638,7 +650,7 @@ export function Track({ initial }: { initial?: string }) {
         <div className="card pad stack lg">
           <div className="row between">
             <span className="mono">{r.ref}</span>
-            <StatusPill i={i} lang={lang} big />
+            <StatusPill i={i} lang={lang} big cta={!!civicConfirm} />
           </div>
           <p className="small stx">{statusExplain(i, lang)}</p>
           <div className="row" style={{ gap: 8 }}>

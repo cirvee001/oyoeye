@@ -30,7 +30,9 @@ import { CHANNEL, CatIcon, Chips, ConfirmButton, Icon, PhotoInput, Priority, She
 import { credibility } from './credibility';
 import { LiveMap } from './LiveMap';
 import { OfficerSosButton } from './Safety';
-import { markAlertOpened } from '../store';
+import { markAlertOpened, markCaseRead } from '../store';
+import { fmtDayName, fmtTimeWat, lagosDayStart } from '../format';
+import { handoffClock } from '../countdown';
 import { GROUP_TIP, REJECT_REASONS, callbackNeeded, canCloseOfficerSos, rejectLabel, safety, standing } from '../store';
 
 const back = () => (history.length > 1 ? history.back() : go('/cases'));
@@ -46,6 +48,7 @@ export function CaseView({ id }: { id: string }) {
     if (i && allowed) {
       logView(i);
       markAlertOpened(i.id); // opening the case stops its alert sound (for every operator)
+      markCaseRead(i.id); // and marks its inbox updates read
     }
   }, [i?.id, allowed]);
 
@@ -74,10 +77,10 @@ export function CaseView({ id }: { id: string }) {
     if (!due) return <span className="muted">—</span>;
     const st = clockState(due, done, at, due - from);
     const tone = st === 'met' || st === 'ok' ? 'good' : st === 'due_soon' ? 'warn' : 'bad';
-    const text = done ? `${st === 'met' ? 'Met' : 'Missed'} · ${hhmm(done)}` : at > due ? `${dur(at - due)} overdue` : `${hhmm(due)} · ${dur(due - at)} left`;
+    const text = done ? `${st === 'met' ? 'Met' : 'Missed'} · ${fmtTimeWat(done)}` : at > due ? `${dur(at - due)} overdue (was due ${fmtTimeWat(due)})` : `by ${fmtTimeWat(due)} · ${dur(due - at)} left`;
     return <span className={`clk ${tone}`}>{text}</span>;
   };
-  const corroborated = distinctReporters(i) > 1;
+  const people = distinctReporters(i);
 
   return (
     <div className="detail">
@@ -99,8 +102,9 @@ export function CaseView({ id }: { id: string }) {
               {i.lone && isOpen(i) && <span className="badge info">Alone on scene</span>}
             </div>
             <h1>{protectedTitle ? subLabel(i.category, i.subcategory) : i.title}</h1>
+            <HandoffBanner i={i} at={at} />
             <p className="muted small">
-              {subLabel(i.category, i.subcategory)} · {i.area}, {lgaOf(i.lgaId).name} · reported {ago(i.createdAt, at)}
+              {`${subLabel(i.category, i.subcategory)} · ${i.area}, ${lgaOf(i.lgaId).name} · reported ${fmtTimeWat(i.createdAt)} (${ago(i.createdAt, at)})`}
             </p>
           </div>
           {me.role === 'officer' && <OfficerSosButton compact />}
@@ -112,13 +116,13 @@ export function CaseView({ id }: { id: string }) {
 
       <Card0 title="Case details">
         <div className="inforow">
-          <Info k="Reported" v={dayTime(i.createdAt)} />
+          <Info k="Reported" v={`${dayTime(i.createdAt)} WAT`} />
           <Info k="Channel" v={CHANNEL[i.reports[0].channel]} />
           <Info k="LGA" v={lgaOf(i.lgaId).name} />
           <Info k="Area / landmark" v={`${i.area}${i.landmark ? ` — near ${i.landmark}` : ''}`} />
           <Info k="Category" v={c.label} />
           <Info k="Severity" v={<Priority s={i.severity} />} />
-          <Info k="Reports" v={`${i.reports.length} · ${corroborated ? `corroborated (${distinctReporters(i)} people)` : i.restricted ? 'not corroborated' : 'single report'}`} />
+          <Info k="Reports" v={`${i.reports.length} · ${people > 1 ? `Reported by ${people} people` : 'Single report'}`} />
           <Info
             k="With"
             v={
@@ -128,7 +132,7 @@ export function CaseView({ id }: { id: string }) {
               </>
             }
           />
-          <Info k="Since" v={`${hhmm(since)} (${ago(since, at)})`} />
+          <Info k="Since" v={`${fmtTimeWat(since)} (${ago(since, at)})`} />
           <Info k={i.status === 'pending' ? 'Review due' : 'Accept due'} v={clock(i.ackDueAt, i.t.acknowledged, i.t.assigned ?? i.createdAt)} />
           <Info k="Arrive due" v={clock(i.arriveDueAt, i.t.onScene, i.createdAt)} />
           <Info k="Resolve due" v={clock(i.resolveDueAt, i.t.resolved, i.createdAt)} />
@@ -200,6 +204,27 @@ export function CaseView({ id }: { id: string }) {
   );
 }
 
+/** Live countdown under the title while a pass waits for acceptance (PRD v2.6 §6). */
+export function HandoffBanner({ i, at }: { i: Incident; at: number }) {
+  const me = persona();
+  const c = isOpen(i) ? handoffClock(i, at) : undefined;
+  if (!c) return null;
+  const receiver = canDecide(me, c.h);
+  const sender = c.h.fromId === me.id;
+  const text = c.tone === 'red' ? c.overdueText : receiver ? `You have ${c.short} to accept` : sender ? `Waiting for them to accept · ${c.short}` : `Waiting for ${c.target} to accept · ${c.short}`;
+  return (
+    <div className={`cd-banner cd-${c.tone}`} role="status" aria-live="polite">
+      <span aria-hidden>⏳</span> <span className="cd-text">{text}</span>
+      <span className="tiny muted">{` · accept by ${fmtTimeWat(c.due)}`}</span>
+      {receiver && (
+        <button className="btn sm primary" onClick={() => run(actions.acceptHandoff(i.id), `Accepted ${i.ref}. You now own it.`)}>
+          Accept
+        </button>
+      )}
+    </div>
+  );
+}
+
 function Info({ k, v }: { k: string; v: ReactNode }) {
   return (
     <div>
@@ -224,16 +249,16 @@ function Card0({ title, right, children }: { title: ReactNode; right?: ReactNode
 
 // ---------- Timeline (grouped by day, like HospEase MedicalTimeline) ----------
 
-const HANDOFF_ACTIONS = ['Passed', 'Handed back', 'Handoff accepted', 'Handoff declined', 'Routing'];
+const HANDOFF_ACTIONS = ['Passed', 'Passed back', 'Handoff accepted', 'Handoff declined', 'Routing'];
 const MESSAGE_ACTIONS = ['Question to reporter', 'Call-back to reporter'];
 const KIND_ICON: Record<string, string> = { handoffs: 'pass', messages: 'inbox', escalation: 'alert', updates: 'check' };
 
 function dayLabel(t: number, at: number) {
-  const d = new Date(t).setHours(0, 0, 0, 0);
-  const today = new Date(at).setHours(0, 0, 0, 0);
+  const d = lagosDayStart(t);
+  const today = lagosDayStart(at);
   if (d === today) return 'Today';
   if (d === today - 86_400_000) return 'Yesterday';
-  return new Date(t).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  return fmtDayName(t);
 }
 
 /** The case timeline (also shown read-only on the oversight complaint page). */
@@ -241,16 +266,88 @@ export function CaseTimeline({ i }: { i: Incident }) {
   return <Timeline i={i} />;
 }
 
+/** System entries hidden from "Key steps" (PRD v2.6 §5); they stay under "Everything". */
+export const HIDDEN_STEPS = ['Triage suggestion', 'Routing', 'Viewed restricted case', 'Conduct feedback requested', 'Held for review', 'Update sent to reporter', 'Case card posted', 'Alert muted 15 min', 'Alert unmuted'];
+export const isKeyStep = (title: string) => !HIDDEN_STEPS.includes(title) && !title.startsWith('Alert muted');
+
+export interface TlRow {
+  at: number;
+  seq: number;
+  title: string;
+  who: string;
+  detail: string;
+  kind: string;
+}
+/** Timeline rows for a case: "Key steps" (default) or "Everything". */
+export function timelineRows(i: Incident, audit: { at: number; seq: number; action: string; actor: string; detail: string; incidentId?: string }[], view: 'key' | 'all') {
+  const entries: TlRow[] = audit
+    .filter((e) => e.incidentId === i.id && (view === 'all' || e.action !== 'Viewed restricted case'))
+    .map((e) => ({ at: e.at, seq: e.seq, title: e.action, who: e.actor, detail: e.detail, kind: HANDOFF_ACTIONS.includes(e.action) ? 'handoffs' : MESSAGE_ACTIONS.includes(e.action) ? 'messages' : e.action === 'Escalated' ? 'escalation' : 'updates' }));
+  const msgs: TlRow[] = i.updates.map((u, k) => ({ at: u.at, seq: -k - 1, title: 'Update sent to reporter', who: 'OyoEye', detail: u.text, kind: 'messages' }));
+  const all = [...entries, ...msgs].sort((a, b) => b.at - a.at || b.seq - a.seq);
+  return view === 'key' ? all.filter((r) => isKeyStep(r.title)) : all;
+}
+const SYSTEM_WHO = ['OyoEye', 'Triage assistant'];
+/** Runs of 3+ consecutive system entries of the same kind collapse into one row ("4 messages sent · show"). */
+export function collapseRuns(rows: TlRow[]) {
+  const out: (TlRow | { run: TlRow[] })[] = [];
+  for (let k = 0; k < rows.length; ) {
+    let j = k;
+    while (j < rows.length && SYSTEM_WHO.includes(rows[j].who) && rows[j].title === rows[k].title && SYSTEM_WHO.includes(rows[k].who)) j++;
+    if (j - k >= 3) {
+      out.push({ run: rows.slice(k, j) });
+      k = j;
+    } else {
+      out.push(rows[k]);
+      k++;
+    }
+  }
+  return out;
+}
+const runLabel = (r: TlRow[]) => (r[0].title === 'Update sent to reporter' ? `${r.length} messages sent` : `${r.length} × ${r[0].title.toLowerCase()}`);
+
+function TlItem({ e }: { e: TlRow }) {
+  return (
+    <li className={`tl-${e.kind}${e.title === 'Handoff declined' ? ' declined' : ''}`}>
+      <span className="tl-time tnum">{hhmm(e.at)}</span>
+      <span className="tl-ico">
+        <Icon name={KIND_ICON[e.kind] ?? 'check'} size={14} />
+      </span>
+      <div>
+        <b>{e.who}</b> <span className="tl-what">{e.title.toLowerCase()}</span>
+        {e.detail && <div className="small muted">{e.detail}</div>}
+      </div>
+    </li>
+  );
+}
+function TlRun({ rows }: { rows: TlRow[] }) {
+  const [open, setOpen] = useState(false);
+  if (open) return <>{rows.map((e) => <TlItem key={`${e.seq}-${e.at}`} e={e} />)}</>;
+  return (
+    <li className="tl-run">
+      <span className="tl-time tnum">{hhmm(rows[0].at)}</span>
+      <span className="tl-ico">
+        <Icon name="inbox" size={14} />
+      </span>
+      <div>
+        <span className="tl-what">{runLabel(rows)}</span> ·{' '}
+        <button className="link-btn" onClick={() => setOpen(true)}>
+          show
+        </button>
+      </div>
+    </li>
+  );
+}
+
 function Timeline({ i }: { i: Incident }) {
   const audit = useStore((s) => s.audit);
   const at = useNow(30_000);
+  const [view, setView] = useState<'key' | 'all'>('key');
   const [filter, setFilter] = useState<'all' | 'handoffs' | 'updates' | 'messages'>('all');
-  const entries = audit
-    .filter((e) => e.incidentId === i.id && e.action !== 'Viewed restricted case')
-    .map((e) => ({ at: e.at, seq: e.seq, title: e.action, who: e.actor, detail: e.detail, kind: HANDOFF_ACTIONS.includes(e.action) ? 'handoffs' : MESSAGE_ACTIONS.includes(e.action) ? 'messages' : e.action === 'Escalated' ? 'escalation' : 'updates' }));
-  const msgs = i.updates.map((u, k) => ({ at: u.at, seq: -k, title: 'Update sent to reporter', who: 'OyoEye', detail: u.text, kind: 'messages' }));
-  const rows = [...entries, ...msgs].filter((e) => filter === 'all' || e.kind === filter || (filter === 'updates' && e.kind === 'escalation')).sort((a, b) => b.at - a.at || b.seq - a.seq);
-  const groups: { day: string; rows: typeof rows }[] = [];
+  const keyN = timelineRows(i, audit, 'key').length;
+  const allN = timelineRows(i, audit, 'all').length;
+  const rows = timelineRows(i, audit, view).filter((e) => filter === 'all' || e.kind === filter || (filter === 'updates' && e.kind === 'escalation'));
+  const groups: { day: string; rows: TlRow[] }[] = [];
   for (const r of rows) {
     const d = dayLabel(r.at, at);
     if (groups[groups.length - 1]?.day !== d) groups.push({ day: d, rows: [] });
@@ -258,26 +355,30 @@ function Timeline({ i }: { i: Incident }) {
   }
   const FILTERS = ['All', 'Handoffs', 'Updates', 'Messages'];
   return (
-    <Card0 title="Timeline" right={<Chips options={FILTERS} value={filter[0].toUpperCase() + filter.slice(1)} onChange={(v) => setFilter(v.toLowerCase() as typeof filter)} />}>
+    <Card0
+      title="Timeline"
+      right={
+        <div className="row" style={{ gap: 8 }}>
+          <div className="seg tl-view" role="group" aria-label="Timeline view">
+            <button className={view === 'key' ? 'on' : ''} aria-pressed={view === 'key'} onClick={() => setView('key')}>
+              Key steps
+            </button>
+            <button className={view === 'all' ? 'on' : ''} aria-pressed={view === 'all'} onClick={() => setView('all')}>
+              {`Everything (${allN - keyN} more)`}
+            </button>
+          </div>
+          <Chips options={FILTERS} value={filter[0].toUpperCase() + filter.slice(1)} onChange={(v) => setFilter(v.toLowerCase() as typeof filter)} />
+        </div>
+      }
+    >
       {!rows.length ? (
         <div className="empty">Nothing here yet.</div>
       ) : (
         groups.map((g) => (
           <div key={g.day} className="tl-day">
             <div className="tl-dayhd">{g.day}</div>
-            <ol className="timeline">
-              {g.rows.map((e) => (
-                <li key={`${e.seq}-${e.at}`} className={`tl-${e.kind}${e.title === 'Handoff declined' ? ' declined' : ''}`}>
-                  <span className="tl-time tnum">{hhmm(e.at)}</span>
-                  <span className="tl-ico">
-                    <Icon name={KIND_ICON[e.kind] ?? 'check'} size={14} />
-                  </span>
-                  <div>
-                    <b>{e.who}</b> <span className="tl-what">{e.title.toLowerCase()}</span>
-                    {e.detail && <div className="small muted">{e.detail}</div>}
-                  </div>
-                </li>
-              ))}
+            <ol className="timeline" data-view={view}>
+              {collapseRuns(g.rows).map((e) => ('run' in e ? <TlRun key={`run-${e.run[0].seq}-${e.run[0].at}`} rows={e.run} /> : <TlItem key={`${e.seq}-${e.at}`} e={e} />))}
             </ol>
           </div>
         ))
@@ -437,27 +538,26 @@ function useNextStep(i: Incident) {
       </>
     );
   } else if (decider && h) {
-    title = h.kind === 'handback' ? 'Handed back to you' : 'Passed to you';
+    title = h.kind === 'handback' || h.kind === 'control' ? 'Passed back to you' : 'Passed to you';
     lead = (
       <>
         <b>{h.fromName}</b> passed this case {ago(h.at, at)}. <b>Reason:</b> {h.reason}
-        {h.note ? <> · Note: {h.note}</> : null} · Accept by {hhmm(i.ackDueAt)} or it escalates.
+        {h.note ? <> · Note: {h.note}</> : null} · Accept by {fmtTimeWat(i.ackDueAt)} or it escalates.
       </>
     );
     P('accept', h.kind === 'unit' ? 'Accept for unit' : 'Accept', () => run(actions.acceptHandoff(i.id), `Accepted ${i.ref}. You now own it.`));
-    if (h.kind === 'unit' && manager) S('assign', 'Assign officer', open('assign'), { pass: true });
+    if (h.kind === 'unit' && manager) S('pass', 'Pass case', open('assign'), { pass: true });
     S('decline', 'Decline', open('decline'));
-    if (h.kind === 'unit' && manager) S('transfer', 'Transfer', open('pass'), { pass: true });
   } else if (i.status === 'pending' && (control || desk)) {
     title = 'Pending review';
     lead = i.restricted ? 'A report is an allegation, not proof. Check it, then pass it to the unit that covers the area. Security is never dispatched automatically.' : 'This report was not clearly classified. Confirm what it is and pass it to the right agency.';
     if (desk) {
       P('take', 'Take case', () => run(actions.takeCase(i.id), 'Case taken by the restricted desk.'));
-      S('pass', 'Pass to partner', open('verify'), { pass: true });
+      S('pass', 'Pass case', open('verify'), { pass: true });
     } else {
       const cb = callbackNeeded(getState(), i);
       if (cb) lead = <>{lead} <span className="tip">Call back before verifying (2 hoaxes in 12 months). SOS is never held back.</span></>;
-      P('verify', i.restricted ? 'Verify & pass to unit' : 'Classify & pass', open(cb ? 'callback' : 'verify'));
+      P('verify', 'Verify & pass', open(cb ? 'callback' : 'verify'));
       if (!cb) S('mark', 'Mark verified', () => run(actions.verify(i.id, { how: 'Operator judgement' }), 'Marked verified.'));
       S('callback', 'Call back reporter', () => run(actions.callBack(i.id), 'Masked call placed. Logged.'));
       S('ask', 'Ask reporter a question', open('ask'));
@@ -466,28 +566,27 @@ function useNextStep(i: Incident) {
     S('reject', 'Reject', open('reject'), { danger: true });
   } else if (i.status === 'verified' && control) {
     title = 'Verified — pass it on';
-    P('pass', i.restricted ? 'Pass to unit' : 'Pass to agency', open('verify'));
+    P('pass', 'Pass case', open('verify'));
     S('reject', 'Reject', open('reject'), { danger: true });
   } else if (i.status === 'assigned' && h) {
     title = 'Waiting for acceptance';
     lead = (
       <>
-        <b>Handoff pending → {handoffTarget(h)}</b> · passed {ago(h.at, at)} by {h.fromName}. They must accept by {hhmm(i.ackDueAt)} or it escalates.
+        <b>Handoff pending → {handoffTarget(h)}</b> · passed {ago(h.at, at)} by {h.fromName}. They must accept by {fmtTimeWat(i.ackDueAt)} or it escalates.
       </>
     );
-    if (control || manager || h.fromId === me.id) S('reassign', 'Reassign', open(manager && h.kind === 'officer' ? 'assign' : 'pass'), { pass: true });
+    if (control || manager || h.fromId === me.id) S('pass', 'Pass case', open(manager && h.kind === 'officer' ? 'assign' : 'pass'), { pass: true });
   } else if (i.status === 'accepted') {
     if (worker) {
       title = 'Accepted — get moving';
       P('start', emergency ? 'En route' : 'Start work', () => run(actions.start(i.id), emergency ? 'Marked en route. The reporter is told help is on the way.' : 'Work started.'));
-      if (officer) S('handback', 'Hand back', open('handback'));
+      if (officer) S('handback', 'Pass case', open('handback'), { pass: true });
     }
     if (manager && !i.officerId) {
-      title = 'Accepted by your unit';
-      primary.unshift({ key: 'assign', label: 'Assign officer', onClick: open('assign') });
-      S('pass', 'Pass case', open('pass'), { pass: true });
-    } else if (manager) S('reassign', 'Reassign', open('assign'), { pass: true });
-    if (control) S('reassign-c', 'Reassign', open('pass'), { pass: true });
+      title = 'Accepted by your unit — pass it to an officer';
+      primary.unshift({ key: 'assign', label: 'Pass case', onClick: open('assign') });
+    } else if (manager) S('pass', 'Pass case', open('assign'), { pass: true });
+    if (control) S('pass-c', 'Pass case', open('pass'), { pass: true });
   } else if (i.status === 'in_progress') {
     title = emergency ? (i.t.onScene ? 'On scene' : 'En route') : 'Work in progress';
     if (worker) {
@@ -495,10 +594,10 @@ function useNextStep(i: Incident) {
       P('resolve', 'Mark resolved', open('resolve'));
       S('update', c.evidence.includes('photo') ? 'Add update / photo' : 'Add update', open('update'));
       if (i.restricted) S('backup', 'Request backup', open('backup'));
-      if (officer) S('handback', 'Hand back', open('handback'));
+      if (officer) S('handback', 'Pass case', open('handback'), { pass: true });
     }
     if (manager || control) S('sendbackup', 'Send backup', open('sendbackup'));
-    if (manager) S('reassign', 'Reassign', open('assign'), { pass: true });
+    if (manager) S('pass', 'Pass case', open('assign'), { pass: true });
   } else if (i.status === 'resolved') {
     title = 'Resolved';
     if (c.citizenVerification) lead = 'Waiting for the citizen to confirm the fix. If nobody replies in 72 hours it closes as "Closed — unconfirmed".';
@@ -515,13 +614,13 @@ function useNextStep(i: Incident) {
     title = 'Reopened';
     lead = `${i.side?.reason ?? 'Reopened'} — accept it again and fix it. Escalation went up one level.`;
     if (worker || manager) P('accept', 'Accept', () => run(actions.acceptCase(i.id), 'Accepted again.'));
-    if (manager) S('assign', 'Assign officer', open('assign'), { pass: true });
+    if (manager) S('pass', 'Pass case', open('assign'), { pass: true });
   }
 
   if (i.noticeHold?.length && me.role === 'agency_head' && agency(me.agencyId)?.kind === 'control_room') S('approve-notice', `Approve community notice (${i.noticeHold.length})`, () => run(actions.approveNotice(i.id), 'Community leaders notified by SMS.'));
   if (i.namesGroup && control && i.status === 'pending' && !i.armedHold) lead = <>{lead} <span className="tip">Tip: {GROUP_TIP} Passing to an armed unit needs the duty lead's confirmation.</span></>;
   if (officer && isOpen(i) && ['accepted', 'in_progress'].includes(i.status)) S(i.lone ? 'lone-off' : 'lone', i.lone ? 'End lone working' : "I'm alone on this job", () => run(safety.setLone(i.id, !i.lone), i.lone ? 'Lone working ended.' : 'Check-in timer starts once you are on scene.'));
-  if (desk && isOpen(i) && i.status !== 'pending' && !decider) S('pass-desk', 'Pass to partner (identity sealed)', open('pass'), { pass: true });
+  if (desk && isOpen(i) && i.status !== 'pending' && !decider) S('pass-desk', 'Pass case', open('pass'), { pass: true });
   if ((control || manager) && isOpen(i)) S('severity', 'Change severity', open('severity'));
   if (me.role !== 'citizen' && canPostChannel(me, channelIdOf(i.agencyId))) S('discuss', 'Discuss in station chat', () => run(chat.discussCase(i.id), `Case card posted in the ${agency(i.agencyId)?.short} chat.`));
   return { title, lead, primary, secondary, sheet: sheet ? <ActionSheet kind={sheet} i={i} onClose={() => setSheet('')} /> : null, citizen: me.role === 'citizen' };
@@ -565,7 +664,7 @@ function HeaderActions({ i }: { i: Incident }) {
         {first && <ActButton a={first} cls="btn primary lg" />}
         {pass && (
           <button className="btn lg" onClick={pass.onClick}>
-            <Icon name="pass" size={17} /> {pass.label === 'Pass case' || pass.label === 'Reassign' || pass.label === 'Transfer' ? 'Pass case' : pass.label}
+            <Icon name="pass" size={17} /> Pass case
           </button>
         )}
         {more.length > 0 && (
@@ -643,7 +742,7 @@ function ActionSheet({ kind, i, onClose }: { kind: SheetKind; i: Incident; onClo
     case 'assign':
       return <PassSheet i={i} mode={kind} onClose={onClose} />;
     case 'handback':
-      return <ReasonSheet title="Hand back to your commander" chips={['Officer off duty', 'Needs armed response', 'Outside our area', 'Other']} button="Hand back" onClose={onClose} onSubmit={(r) => run(actions.handBack(i.id, r), 'Handed back to your commander. They must accept it.')} />;
+      return <ReasonSheet title="Pass case — pass back to my commander" chips={['Officer off duty', 'Needs armed response', 'Outside our area', 'Other']} button="Pass back to my commander" onClose={onClose} onSubmit={(r) => run(actions.handBack(i.id, r), 'Passed back to your commander. They must accept it.')} />;
     case 'decline':
       return <ReasonSheet title="Decline — tell them why" chips={REASONS} button="Decline" danger onClose={onClose} onSubmit={(r) => run(actions.declineHandoff(i.id, r), 'Declined. The case went back to the sender with your reason.')} />;
     case 'rejectres':
@@ -715,8 +814,8 @@ function PassSheet({ i, mode, onClose }: { i: Incident; mode: 'verify' | 'pass' 
   const [category, setCategory] = useState<CategoryId>(i.category === 'other' ? 'waste' : i.category);
   const [sub, setSub] = useState(i.category === 'other' ? 'refuse' : i.subcategory ?? cat(i.category).subcategories[0].id);
   const [sev, setSev] = useState<Severity>(i.severity);
-  const options: PassTo[] = mode === 'assign' ? ['person'] : manager ? ['unit', 'person', 'control'] : ['unit'];
-  const [to, setTo] = useState<PassTo>(options[0]);
+  const options: PassTo[] = manager ? ['unit', 'person', 'control'] : ['unit'];
+  const [to, setTo] = useState<PassTo>(mode === 'assign' && manager ? 'person' : options[0]);
   const [target, setTarget] = useState('');
   const [chip, setChip] = useState(mode === 'verify' ? 'Covers this area' : mode === 'assign' ? 'Nearest patrol' : '');
   const [note, setNote] = useState('');
@@ -757,7 +856,8 @@ function PassSheet({ i, mode, onClose }: { i: Incident; mode: 'verify' | 'pass' 
     setDone(msg);
   };
 
-  const title = mode === 'verify' && i.status === 'pending' ? (security ? 'Verify & pass' : 'Classify & pass') : mode === 'assign' ? 'Assign officer' : 'Pass case';
+  const title = mode === 'verify' && i.status === 'pending' ? 'Verify & pass' : 'Pass case';
+  void security;
   return (
     <Sheet title={`${title} ${i.ref}`} onClose={onClose}>
       {done ? (
@@ -842,7 +942,7 @@ function PassSheet({ i, mode, onClose }: { i: Incident; mode: 'verify' | 'pass' 
                 {options.map((o) => (
                   <label key={o} className={to === o ? 'on' : ''}>
                     <input type="radio" name="passto" checked={to === o} onChange={() => (setTo(o), setTarget(''), setChip(''))} />
-                    {o === 'unit' ? 'Unit / agency' : o === 'person' ? 'Person in my unit' : 'Back to control room'}
+                    {o === 'unit' ? 'Pass to another unit or agency' : o === 'person' ? 'Pass to an officer' : 'Pass back to the control room'}
                   </label>
                 ))}
               </div>

@@ -5,6 +5,7 @@ import { LANDING, MENUS, initials, roleKind, roleName } from './roles';
 import { advanceClock, chatUnread, dep, incidentByRef, needsOnboarding, publishRulebook, now, persona, resetDemo, setDuty, setSimLocation, signIn, signOut, signedIn, tick, useStore } from './store';
 import { missingTranslations, useLang, type StrKey } from './i18n';
 import { SIM_LOCATIONS, type SimId } from './geo';
+import { inboxView } from './inbox';
 import { AlertCenter, SpeakerControl } from './views/Alerts';
 import { unlockAudio } from './sound';
 import { CaseView } from './views/CaseView';
@@ -223,7 +224,6 @@ export function App() {
   let path = pathPart && pathPart !== '/signin' && pathPart !== '/' ? pathPart : landing;
   if (ALIAS[path.split('/')[1]]) path = ALIAS[path.split('/')[1]];
   const [h2, id2] = path.split('/').filter(Boolean);
-  const q = new URLSearchParams(queryPart).get('q') ?? '';
 
   let page: ReactNode;
   if (h2 === 'case') page = <CaseView id={id2} />;
@@ -246,7 +246,7 @@ export function App() {
   else if (h2 === 'community') page = kind === 'chair' ? <ChairCommunity /> : <NoAccess />;
   else if (h2 === 'mycommunity') page = kind === 'focal' ? <MyCommunity /> : <NoAccess />;
   else if (h2 === 'misconduct') page = <Misconduct ref0={new URLSearchParams(queryPart).get('ref') ?? ''} />;
-  else if (h2 === 'cases') page = ['admin', 'oversight', 'focal', 'citizen'].includes(kind) ? <NoAccess /> : <Cases key={q} q={q} />;
+  else if (h2 === 'cases') page = ['admin', 'oversight', 'focal', 'citizen'].includes(kind) ? <NoAccess /> : <Cases query={queryPart} />;
   else
     page =
       {
@@ -274,7 +274,7 @@ export function App() {
         </div>
       );
 
-  const unread = s.inbox.filter((n) => n.to === me.id && !n.read).length;
+  const unread = inboxView(s, me, now()).badge; // v2.6 §4: action items + unread case groups, same as the bell
   const chatN = ['gov', 'chair', 'admin', 'citizen', 'oversight'].includes(kind) ? 0 : chatUnread(s, me);
 
   // ---- Field officers and citizens: phone-first, bottom tab bar ----

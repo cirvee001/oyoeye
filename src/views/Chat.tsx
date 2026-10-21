@@ -1,3 +1,4 @@
+import { fmtDayName, lagosDayStart } from '../format';
 import { useEffect, useRef, useState } from 'react';
 import { isOpen } from '../platform/engine';
 import type { ChatChannel, ChatMessage, Incident } from '../platform/types';
@@ -28,13 +29,13 @@ import {
 import { initials } from '../roles';
 import { CatIcon, Icon, Sheet, StatusPill, go, hhmm, run, samplePhoto, useNow } from '../ui';
 
-const dayKey = (t: number) => new Date(t).toDateString();
+const dayKey = (t: number) => String(lagosDayStart(t));
 const dayLabel = (t: number, at: number) => {
-  const d = new Date(t).setHours(0, 0, 0, 0);
-  const today = new Date(at).setHours(0, 0, 0, 0);
+  const d = lagosDayStart(t);
+  const today = lagosDayStart(at);
   if (d === today) return 'Today';
   if (d === today - 86_400_000) return 'Yesterday';
-  return new Date(t).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  return fmtDayName(t);
 };
 
 function preview(m: ChatMessage | undefined, meId: string) {

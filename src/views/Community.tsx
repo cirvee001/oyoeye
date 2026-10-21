@@ -1,3 +1,4 @@
+import { PHONE_HINT } from '../format';
 import { useState } from 'react';
 import type { FocalGroup, Person } from '../platform/types';
 import { FOCAL_GROUPS, LEADERS, agency, community, communityCases, dep, focalManageable, lgaOf, persona, safeSecurity, subLabel, useStore, validPhone } from '../store';
@@ -159,11 +160,11 @@ export function FocalList({ showLeaders }: { showLeaders?: boolean }) {
                   </td>
                   <td className="small nowrap">{p.phone}</td>
                   <td className="small">{p.sponsor}</td>
-                  <td>{p.staffStatus === 'active' ? p.verified ? <span className="pill sf-active">Verified</span> : <span className="pill sf-invited">Activated — verify</span> : <StaffStatus s={p.staffStatus} />}</td>
+                  <td>{p.staffStatus === 'active' ? p.verified ? <span className="pill sf-active">Registered</span> : <span className="pill sf-invited">Activated — register</span> : <StaffStatus s={p.staffStatus} />}</td>
                   <td className="nowrap">
                     {p.staffStatus === 'active' && !p.verified && (
-                      <button className="btn sm primary" onClick={() => run(community.verify(p.id), `${p.name} verified.`)}>
-                        Verify
+                      <button className="btn sm primary" onClick={() => run(community.verify(p.id), `${p.name} registered.`)}>
+                        Register
                       </button>
                     )}
                     {p.staffStatus === 'active' && (
@@ -268,8 +269,8 @@ function InviteFocal({ lgas, onClose }: { lgas: string[]; onClose: () => void })
           <span>Sponsor</span>
           <input className="input" value={v.sponsor} onChange={(e) => setV({ ...v, sponsor: e.target.value })} placeholder="e.g. Nominated by the Baale of Igangan" />
         </label>
-        {v.phone.length > 6 && !validPhone(v.phone) && <span className="small clk bad">Enter a Nigerian mobile number.</span>}
-        <button className="btn primary lg block" disabled={!v.name.trim() || !v.community.trim() || !validPhone(v.phone)} onClick={() => run(community.invite(v), `Invite sent to ${v.phone}. They activate with the SMS code, then you verify them.`) && onClose()}>
+        {v.phone.length > 6 && !validPhone(v.phone) && <span className="small clk bad">{PHONE_HINT}</span>}
+        <button className="btn primary lg block" disabled={!v.name.trim() || !v.community.trim() || !validPhone(v.phone)} onClick={() => run(community.invite(v), `Invite sent to ${v.phone}. They activate with the SMS code, then you register them.`) && onClose()}>
           Send invite by SMS
         </button>
         <p className="tiny muted center">Onboard associations from every side of a community. The platform must not become a tool for one group.</p>
