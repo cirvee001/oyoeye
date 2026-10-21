@@ -1,243 +1,311 @@
-import { useState } from 'react';
-import { isOpen, km } from '../platform/engine';
-import { triage } from '../platform/triage';
-import type { CategoryId, Channel, Identity, Incident } from '../platform/types';
-import { actions, agency, dep, incidentByRef, lgaOf, persona, submitReport, subLabel, useStore } from '../store';
-import { Card, ago, go, hhmm, Stage, useNow } from '../ui';
-import { PhotoInput } from './CaseView';
+import { useEffect, useRef, useState } from 'react';
+import { isOpen } from '../platform/engine';
+import type { CategoryId, Identity, Incident } from '../platform/types';
+import { catLabel, errText, msgText, statusExplain, useLang, type StrKey } from '../i18n';
+import { markCaseRead, actions, addSosLocation, agency, conduct, dep, feedbackFor, incidentByRef, lgaOf, persona, setLang, signedIn, submitReport, suggest, subLabel, useStore } from '../store';
+import { AnonRules, anonRulesSeen } from './RuleBook';
+import { AreaPickers, LocationStep, PlaceChip, placeFromPoint, useLocator, type Place } from './Location';
+import { CatIcon, Icon, PhotoInput, StatusPill, Stepper, ago, go, hhmm, run, useNow, useQuery } from '../ui';
+import { myReports } from '../filters';
 
-const CHIPS: { id: CategoryId; label: string }[] = [
-  { id: 'security', label: 'Security' },
-  { id: 'fire', label: 'Fire' },
-  { id: 'flooding', label: 'Flooding / drainage' },
-  { id: 'roads', label: 'Road' },
-  { id: 'waste', label: 'Waste' },
-  { id: 'infrastructure', label: 'Public infrastructure' },
-];
+const TILES: CategoryId[] = ['security', 'fire', 'flooding', 'roads', 'waste', 'infrastructure', 'other'];
+const SOS_TILES: CategoryId[] = ['security', 'fire', 'flooding', 'other'];
 
-const IDENTITY: { id: Identity; label: string; text: string }[] = [
-  { id: 'standard', label: 'Standard', text: 'Government can contact you about this report.' },
-  { id: 'confidential', label: 'Confidential', text: 'Only specially authorised officers can see who you are. Responding units never see it.' },
-  { id: 'anonymous', label: 'Anonymous', text: 'Your name and number are not stored at all. Keep your reference number to track it.' },
-];
-
-function nearestLga(lat: number, lng: number) {
-  return dep.lgas.slice().sort((a, b) => km(a.lat, a.lng, lat, lng) - km(b.lat, b.lng, lat, lng))[0];
+/** EN / YO — in the top bar of every citizen screen and on the sign-in page; remembered (§5). */
+export function LangToggle() {
+  const [lang, t] = useLang();
+  return (
+    <div className="seg lang" role="group" aria-label={t('lang.label')}>
+      <button className={lang === 'en' ? 'on' : ''} onClick={() => setLang('en')} aria-pressed={lang === 'en'} aria-label="English" lang="en">
+        EN
+      </button>
+      <button className={lang === 'yo' ? 'on' : ''} onClick={() => setLang('yo')} aria-pressed={lang === 'yo'} aria-label="Yorùbá" lang="yo">
+        YO
+      </button>
+    </div>
+  );
 }
 
-export function Citizen() {
-  const me = persona();
-  const [text, setText] = useState('');
-  const [category, setCategory] = useState<CategoryId>();
-  const [lgaId, setLga] = useState(me.id === 'cit1' ? 'ibn' : 'ibn');
-  const [area, setArea] = useState('Bodija');
-  const [landmark, setLandmark] = useState('');
-  const [identity, setIdentity] = useState<Identity>('standard');
-  const [channel, setChannel] = useState<Channel>('web');
-  const [photo, setPhoto] = useState<string>();
-  const [gps, setGps] = useState<{ lat: number; lng: number }>();
-  const [done, setDone] = useState<{ ref: string; incident: Incident; merged: boolean }>();
-  const [sos, setSos] = useState<'idle' | 'confirm'>('idle');
-  const [tab, setTab] = useState<'app' | 'whatsapp'>('app');
-  const lga = lgaOf(lgaId);
-  const suggestion = text.trim().length > 12 ? triage(text, { category }) : undefined;
+// ---------- Home ----------
 
-  const locate = () => {
-    const fallback = () => {
-      const l = lgaOf(lgaId);
-      setGps({ lat: l.lat + 0.004, lng: l.lng - 0.003 });
-    };
-    if (!navigator.geolocation) return fallback();
-    navigator.geolocation.getCurrentPosition(
-      (p) => {
-        const { latitude: lat, longitude: lng } = p.coords;
-        const b = dep.bounds;
-        if (lat < b.minLat || lat > b.maxLat || lng < b.minLng || lng > b.maxLng) return fallback(); // outside the state: demo location
-        const l = nearestLga(lat, lng);
-        setLga(l.id);
-        setArea(l.areas[0]);
-        setGps({ lat, lng });
-      },
-      fallback,
-      { timeout: 4000 },
-    );
+export function CitizenHome() {
+  const me = persona();
+  const [, t] = useLang();
+  const incidents = useStore((s) => s.incidents);
+  const mine = incidents.filter((i) => i.reports.some((r) => r.reporter?.personId === me.id));
+  const waiting = mine.filter((i) => i.status === 'resolved' && dep.categories.find((c) => c.id === i.category)?.citizenVerification).length;
+  return (
+    <div className="phone">
+      <h1>{`${t('home.hello')}, ${me.name.split(' ')[0]}`}</h1>
+      <button className="tile sos" onClick={() => go('/sos')}>
+        <span className="tile-ico">SOS</span>
+        <span>
+          <b>{t('home.sos')}</b>
+          <small>{t('home.sos.sub')}</small>
+        </span>
+      </button>
+      <div className="tiles">
+        <button className="tile" onClick={() => go('/report')}>
+          <span className="tile-ico">
+            <Icon name="plus" size={30} />
+          </span>
+          <b>{t('home.report')}</b>
+          <small>{t('home.report.sub')}</small>
+        </button>
+        <button className="tile" onClick={() => go('/my')}>
+          <span className="tile-ico">
+            <Icon name="list" size={30} />
+          </span>
+          <b>{t('home.mine')}</b>
+          <small>{`${mine.length} · ${t('home.mine.sub')}`}</small>
+          {waiting > 0 && <span className="badge warn">{t('home.waiting', { n: waiting })}</span>}
+        </button>
+      </div>
+      <p className="tiny muted center">
+        {t('home.nophone')} <b>*615#</b> {t('home.orcall')} <b>615</b>.
+      </p>
+    </div>
+  );
+}
+
+// ---------- Report flow (3 steps) ----------
+
+export function ReportFlow() {
+  const me = persona();
+  const guest = !signedIn();
+  const [lang, t] = useLang();
+  const [step, setStep] = useState(1);
+  const [category, setCategory] = useState<CategoryId>();
+  const [text, setText] = useState('');
+  const [photo, setPhoto] = useState<string>();
+  const [voice, setVoice] = useState<string>();
+  const [recording, setRecording] = useState(false);
+  const focal = me.role === 'focal';
+  const [place, setPlace] = useState<Place | undefined>(() => (focal && me.lgaId ? placeFromPoint(me.lgaId, me.community && lgaOf(me.lgaId).areas.includes(me.community) ? me.community : lgaOf(me.lgaId).areas[0]) : undefined));
+  const [landmark, setLandmark] = useState('');
+  const [noLandmark, setNoLandmark] = useState(false);
+  const [tried, setTried] = useState(0);
+  const [identity, setIdentity] = useState<Identity>(guest ? 'anonymous' : 'standard');
+  // v2.3 §3.1: focal-person extras
+  const [how, setHow] = useState<'saw' | 'told' | 'at_scene'>('saw');
+  const [atRisk, setAtRisk] = useState('');
+  const [canAssist, setCanAssist] = useState(false);
+  const [optIn, setOptIn] = useState(false);
+  const [done, setDone] = useState<{ ref: string; incident: Incident; merged: boolean }>();
+  const suggestion = text.trim().length > 8 ? suggest(text, { category }) : undefined;
+  // v2.4: anonymous reporters see a one-screen summary of 3 key rules once per session (never for SOS).
+  const [rulesOk, setRulesOk] = useState(() => !guest || anonRulesSeen());
+  const step1Ok = !!category || text.trim().length >= 4 || !!voice;
+  const step2Ok = !!place && (!!landmark.trim() || noLandmark);
+
+  const record = () => {
+    setRecording(true);
+    setTimeout(() => {
+      setRecording(false);
+      setVoice(`Voice note 0:${String(8 + Math.floor(Math.random() * 40)).padStart(2, '0')} (simulated)`);
+    }, 1600);
   };
 
-  const reporter = { personId: me.id, name: me.name, phone: me.phone };
-  const submit = (isSos = false) => {
+  const submit = () => {
+    if (!place) return;
     const res = submitReport({
-      text: isSos ? text.trim() || 'SOS button pressed — reporter needs help now' : text,
-      category: isSos ? 'security' : category,
-      lgaId,
-      area,
-      landmark: landmark || undefined,
-      lat: gps?.lat,
-      lng: gps?.lng,
-      identity: isSos && identity === 'standard' ? 'confidential' : identity,
-      channel,
-      reporter,
+      text: text.trim() || (voice ? `Voice note: ${catLabel(category ?? 'other')}` : catLabel(category ?? 'other')),
+      category: category === 'other' ? undefined : category,
+      lgaId: place.lgaId,
+      area: place.area,
+      landmark: landmark.trim() || undefined,
+      lat: place.lat,
+      lng: place.lng,
+      identity: focal ? 'standard' : identity,
+      channel: 'web',
+      reporter: guest ? undefined : { personId: me.id, name: me.name, phone: me.phone, optInUpdates: optIn || focal },
       photo,
-      sos: isSos,
+      voice,
+      focal: focal ? { how, atRisk: Number(atRisk) || undefined, canAssist } : undefined,
+      lang,
     });
     setDone(res);
-    setSos('idle');
   };
 
-  if (done) return <Receipt done={done} onNew={() => { setDone(undefined); setText(''); setPhoto(undefined); setCategory(undefined); }} />;
+  if (!rulesOk) return <AnonRules onOk={() => setRulesOk(true)} />;
+  if (done) return <Receipt done={done} onNew={() => (setDone(undefined), setStep(1), setText(''), setPhoto(undefined), setVoice(undefined), setCategory(undefined), setLandmark(''), setNoLandmark(false), setTried(0))} />;
 
   return (
     <div className="phone">
-      <div className="seg" style={{ justifySelf: 'center' }}>
-        <button className={tab === 'app' ? 'on' : ''} onClick={() => setTab('app')}>
-          App / web
-        </button>
-        <button className={tab === 'whatsapp' ? 'on' : ''} onClick={() => setTab('whatsapp')}>
-          WhatsApp
-        </button>
+      <span className="small muted">{t('r.stepof', { n: step, m: 3 })}</span>
+      <div className="progress3" role="progressbar" aria-valuemin={1} aria-valuemax={3} aria-valuenow={step} aria-label={t('r.stepof', { n: step, m: 3 })}>
+        {[1, 2, 3].map((k) => (
+          <span key={k} className={k <= step ? 'on' : ''} />
+        ))}
       </div>
-      {tab === 'whatsapp' ? (
-        <WhatsApp />
-      ) : (
-        <>
-          {sos === 'idle' ? (
-            <button className="sos-btn" onClick={() => setSos('confirm')}>
-              SOS — I need help now
-              <small>Sends your location to the {dep.emergencyLine} control room immediately</small>
-            </button>
-          ) : (
-            <div className="card pad stack" style={{ borderColor: 'var(--crit)' }}>
-              <h2>Send SOS from {area}, {lga.name}?</h2>
-              <p className="small muted">An operator sees it at once. Add one line if you can do so safely. Your identity will be kept confidential.</p>
-              <input className="input" placeholder="What is happening? (optional)" value={text} onChange={(e) => setText(e.target.value)} />
-              <div className="row">
-                <button className="btn danger lg" onClick={() => submit(true)}>
-                  Send SOS
-                </button>
-                <button className="btn" onClick={() => setSos('idle')}>
-                  Cancel
-                </button>
-              </div>
-              <p className="tiny muted">In immediate danger you can also call {dep.emergencyLine}.</p>
+
+      {step === 1 && (
+        <div className="card pad stack lg">
+          <div>
+            <h1>{focal ? t('r.focal.title') : t('r.what')}</h1>
+            <p className="muted small">{t('r.what.sub')}</p>
+          </div>
+          <div className="cat-grid" role="group" aria-label={t('r.what')}>
+            {TILES.map((c) => (
+              <button key={c} className={`cat-tile${category === c ? ' on' : ''}`} onClick={() => setCategory(category === c ? undefined : c)} aria-pressed={category === c}>
+                <CatIcon c={c} size={26} />
+                <span>{catLabel(c, lang)}</span>
+              </button>
+            ))}
+          </div>
+          <label className="field">
+            <span>{t('r.describe')}</span>
+            <textarea className="input" rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. Panti ti po ju ni Mokola" />
+          </label>
+          {suggestion && !category && (
+            <div className="small muted">
+              {t('r.looks')} <b>{suggestion.category === 'other' ? t('r.looks.unsure') : lang === 'yo' ? catLabel(suggestion.category, lang) : subLabel(suggestion.category, suggestion.subcategory)}</b>
             </div>
           )}
-
-          <div className="card pad stack lg">
-            <div>
-              <h1>What would you like to report?</h1>
-              <p className="muted" style={{ marginTop: 4 }}>
-                Just describe it — in English, Yoruba or Pidgin. You don't need to know which agency is responsible.
-              </p>
-            </div>
-            <textarea className="input" rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. The drainage here is overflowing onto the road…" />
-            {suggestion && (
-              <div className="small muted">
-                Looks like: <b>{subLabel(suggestion.category, suggestion.subcategory)}</b>
-                {suggestion.category === 'security' ? ' — a control-room operator will read it now.' : ''}
-              </div>
-            )}
-            <div className="field">
-              <span>Category (optional)</span>
-              <div className="chips">
-                {CHIPS.map((c) => (
-                  <button key={c.id} className={`chip${category === c.id ? ' on' : ''}`} onClick={() => setCategory(category === c.id ? undefined : c.id)}>
-                    {c.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="grid g2">
-              <label className="field">
-                <span>Local government</span>
-                <select
-                  className="input"
-                  value={lgaId}
-                  onChange={(e) => {
-                    setLga(e.target.value);
-                    setArea(lgaOf(e.target.value).areas[0]);
-                    setGps(undefined);
-                  }}
-                >
-                  {dep.lgas.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Area</span>
-                <select className="input" value={area} onChange={(e) => setArea(e.target.value)}>
-                  {lga.areas.map((a) => (
-                    <option key={a}>{a}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="row">
-              <button className="btn sm" onClick={locate}>
-                {gps ? 'Location attached ✓' : 'Use my location'}
-              </button>
-              <input className="input" style={{ flex: 1, minWidth: 160 }} placeholder="Landmark (optional)" value={landmark} onChange={(e) => setLandmark(e.target.value)} />
-            </div>
-            <PhotoInput value={photo} onChange={setPhoto} label="Photo (optional)" />
-            <div className="field">
-              <span>How should we handle your identity?</span>
-              {IDENTITY.map((o) => (
-                <label key={o.id} className={`idopt${identity === o.id ? ' on' : ''}`}>
-                  <input type="radio" checked={identity === o.id} onChange={() => setIdentity(o.id)} />
-                  <span>
-                    <b>{o.label}</b>
-                    <div className="small muted">{o.text}</div>
-                  </span>
-                </label>
-              ))}
-            </div>
-            {identity !== 'anonymous' && (
-              <label className="field">
-                <span>Send updates by</span>
-                <select className="input" value={channel} onChange={(e) => setChannel(e.target.value as Channel)}>
-                  <option value="web">SMS to {me.phone}</option>
-                  <option value="whatsapp">WhatsApp</option>
-                </select>
-              </label>
-            )}
-            <button className="btn primary lg block" disabled={text.trim().length < 6} onClick={() => submit()}>
-              Submit report
+          <PhotoInput value={photo} onChange={setPhoto} label={`${t('r.photo')} ${t('r.optional')}`} sample="Reported by citizen" sampleTone="#5d6b3c" lang={lang} />
+          <div className="row">
+            <button className={`btn${recording ? ' danger' : ''}`} onClick={record} disabled={recording} aria-label={recording ? t('r.voice.rec') : voice ? t('r.voice.done') : t('r.voice')}>
+              <Icon name="mic" /> {recording ? `● ${t('r.voice.rec')}` : voice ? t('r.voice.done') : t('r.voice')}
             </button>
-            <p className="tiny muted">
-              False reports are an offence. A report is treated as information to check, not as proof against anyone. Also available by WhatsApp, SMS, USSD and the {dep.emergencyLine} line.
-            </p>
+            {voice && <span className="small muted">{voice}</span>}
           </div>
-        </>
+          {tried === 1 && !step1Ok && (
+            <span className="field-err" role="alert">
+              {t('r.what.err')}
+            </span>
+          )}
+          <button className="btn primary lg block" aria-disabled={!step1Ok} onClick={() => (step1Ok ? (setStep(2), setTried(0)) : setTried(1))}>
+            {t('r.next')}
+          </button>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="card pad stack lg">
+          <div>
+            <h1>{t('r.where')}</h1>
+            <p className="muted small">{t('r.where.sub')}</p>
+          </div>
+          <LocationStep place={place} onChange={setPlace} landmark={landmark} onLandmark={setLandmark} landmarkUnknown={noLandmark} onLandmarkUnknown={setNoLandmark} landmarkRequired showErrors={tried === 2} />
+          {tried === 2 && !place && (
+            <span className="field-err" role="alert">
+              {t('r.denied')}
+            </span>
+          )}
+          <div className="row">
+            <button className="btn lg" onClick={() => setStep(1)}>
+              {t('r.back')}
+            </button>
+            <button className="btn primary lg" style={{ flex: 1 }} aria-disabled={!step2Ok} onClick={() => (step2Ok ? (setStep(3), setTried(0)) : setTried(2))}>
+              {t('r.next')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 3 && (
+        <div className="card pad stack lg">
+          <div>
+            <h1>{focal ? t('r.about') : t('r.who')}</h1>
+            <p className="muted small">{focal ? t('r.focal.as', { name: me.name, title: me.title }) : t('r.who.sub')}</p>
+          </div>
+          {focal && (
+            <>
+              <fieldset className="field">
+                <legend>{t('r.how')}</legend>
+                <div className="opts">
+                  {(
+                    [
+                      ['saw', 'r.how.saw'],
+                      ['told', 'r.how.told'],
+                      ['at_scene', 'r.how.scene'],
+                    ] as const
+                  ).map(([k, l]) => (
+                    <label key={k} className={`pick${how === k ? ' on' : ''}`}>
+                      <input type="radio" name="how" checked={how === k} onChange={() => setHow(k)} /> {t(l)}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <label className="field">
+                <span>{t('r.atrisk')}</span>
+                <input className="input lg" inputMode="numeric" value={atRisk} onChange={(e) => setAtRisk(e.target.value.replace(/\D/g, ''))} placeholder="6" />
+              </label>
+              <label className="optin">
+                <input type="checkbox" checked={canAssist} onChange={(e) => setCanAssist(e.target.checked)} />
+                <span>
+                  <b>{t('r.assist')}</b>
+                  <div className="tiny muted">{t('r.assist.sub')}</div>
+                </span>
+              </label>
+            </>
+          )}
+          {!focal &&
+            (['standard', 'confidential', 'anonymous'] as Identity[]).map((o) => (
+              <label key={o} className={`idopt${identity === o ? ' on' : ''}${guest && o !== 'anonymous' ? ' disabled' : ''}`}>
+                <input type="radio" name="identity" disabled={guest && o !== 'anonymous'} checked={identity === o} onChange={() => setIdentity(o)} />
+                <span>
+                  <b>{t(`id.${o}` as StrKey)}</b>
+                  <div className="small muted">{t(`id.${o}.sub` as StrKey)}</div>
+                </span>
+              </label>
+            ))}
+          {guest && (
+            <p className="small muted">
+              {t('r.guest')} <a href="#/signin">{t('r.guest.link')}</a> {t('r.guest.tail')}
+            </p>
+          )}
+          {!guest && !focal && identity !== 'anonymous' && (
+            <label className="optin">
+              <input type="checkbox" checked={optIn} onChange={(e) => setOptIn(e.target.checked)} />
+              <span>
+                <b>{t('r.optin')}</b>
+                <div className="tiny muted">{t('r.optin.sub')}</div>
+              </span>
+            </label>
+          )}
+          <div className="row">
+            <button className="btn lg" onClick={() => setStep(2)}>
+              {t('r.back')}
+            </button>
+            <button className="btn primary lg" style={{ flex: 1 }} onClick={submit}>
+              {t('r.submit')}
+            </button>
+          </div>
+          <p className="tiny muted">{t('r.false')}</p>
+        </div>
       )}
     </div>
   );
 }
 
 function Receipt({ done, onNew }: { done: { ref: string; incident: Incident; merged: boolean }; onNew: () => void }) {
+  const [lang, t] = useLang();
+  useStore((s) => s.incidents);
   const i = done.incident;
   return (
     <div className="phone">
       <div className="card receipt">
-        <div className="badge good" style={{ justifySelf: 'center' }}>
-          Report received
+        <div className="big-check">
+          <Icon name="check" size={34} />
         </div>
-        <div className="muted small">Report ID</div>
+        <h1>{t('r.done')}</h1>
+        <div className="muted small">{t('r.ref')}</div>
         <div className="ref mono">{done.ref}</div>
+        <div className="notice warn small">{t('r.save')}</div>
         <div>
-          Location: <b>{i.area}</b>
+          <StatusPill i={i} lang={lang} big />
         </div>
-        <div>
-          Status: <Stage i={i} />
+        {done.merged && <div className="notice small">{t('r.merged', { ref: i.ref })}</div>}
+        <div className="notice small" style={{ textAlign: 'left' }}>
+          <b>{t('r.next.title')}:</b> {i.restricted ? t('r.next.sec') : t('r.next.civic')}
         </div>
-        {done.merged && <div className="notice small">Others have reported this too. Your report was added to {i.ref} ({i.reports.length} reports) so responders see one job, not many.</div>}
-        {i.restricted && <div className="notice small">A control-room operator is reading your report now. If you are in danger, move to safety and call {dep.emergencyLine}.</div>}
-        <div className="row" style={{ justifyContent: 'center', marginTop: 8 }}>
-          <button className="btn primary" onClick={() => go(`/track/${done.ref}`)}>
-            Track this report
+        <div className="stack">
+          <button className="btn primary lg block" onClick={() => go(`/track/${done.ref}`)}>
+            {t('r.track')}
           </button>
-          <button className="btn" onClick={onNew}>
-            New report
+          <button className="btn lg block" onClick={onNew}>
+            {t('r.new')}
           </button>
         </div>
       </div>
@@ -245,159 +313,507 @@ function Receipt({ done, onNew }: { done: { ref: string; incident: Incident; mer
   );
 }
 
+// ---------- SOS (signed in or not) ----------
+
+/** How long the SOS waits for a location before it goes anyway (§2.6). */
+export const SOS_LOCATION_WAIT_MS = 5000;
+/** One hold time for both SOS buttons (§3). */
+export const SOS_HOLD_MS = 2000;
+
+export function Emergency() {
+  const me = persona();
+  const guest = !signedIn();
+  const [lang, t] = useLang();
+  const [category, setCategory] = useState<CategoryId>('security');
+  const [place, setPlace] = useState<Place>();
+  const [choosing, setChoosing] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const [waiting, setWaiting] = useState(false);
+  const [ref, setRef] = useState<string>();
+  const opened = useRef(Date.now());
+  const sent = useRef(false);
+  // Location is captured in the background as soon as the screen opens, so the hold is never delayed.
+  const loc = useLocator((r) => r.status === 'ok' && setPlace((p) => (p?.source === 'manual' ? p : { lgaId: r.lgaId, area: r.area, lat: r.lat, lng: r.lng, source: 'gps' })));
+  useEffect(() => {
+    opened.current = Date.now();
+    loc.locate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const doSend = (p: Place | undefined) => {
+    if (sent.current) return;
+    sent.current = true;
+    const sos = category === 'security' || category === 'other';
+    const where = p?.area ?? 'Location unknown';
+    const res = submitReport({
+      text: sos ? `SOS — ${guest ? 'anonymous caller' : 'reporter'} needs help now at ${where}` : `EMERGENCY: ${catLabel(category)} at ${where} — needs help now`,
+      category: sos ? 'security' : category,
+      lgaId: p?.lgaId ?? 'ibn',
+      area: where,
+      lat: p?.lat,
+      lng: p?.lng,
+      landmark: p ? undefined : 'Location unknown — operator will call',
+      locationUnknown: !p || undefined,
+      identity: guest ? 'anonymous' : 'confidential',
+      channel: sos ? 'sos' : 'web',
+      sos,
+      reporter: guest ? undefined : { personId: me.id, name: me.name, phone: me.phone },
+      lang,
+    });
+    setRef(res.ref);
+  };
+  /** Send now with the location we have; if it is still being found, wait up to 5 s from opening, then send anyway. */
+  const send = () => {
+    if (place) return doSend(place);
+    if (loc.status === 'finding' && Date.now() - opened.current < SOS_LOCATION_WAIT_MS) return setWaiting(true);
+    doSend(undefined);
+  };
+  useEffect(() => {
+    if (!waiting) return;
+    if (place) return doSend(place);
+    if (loc.status !== 'finding') return doSend(undefined);
+    const tm = setTimeout(() => doSend(undefined), Math.max(0, SOS_LOCATION_WAIT_MS - (Date.now() - opened.current)));
+    return () => clearTimeout(tm);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waiting, place, loc.status]);
+
+  if (ref) return <SosSent refNo={ref} />;
+
+  const locLine =
+    place && place.source !== 'manual' ? (
+      <PlaceChip place={place} editing={choosing} onEdit={() => setChoosing(!choosing)} />
+    ) : loc.status === 'finding' ? (
+      <span className="small">{t('sos.loc.finding')}</span>
+    ) : !place ? (
+      <span className="small">{t('sos.loc.unknown')}</span>
+    ) : null;
+
+  return (
+    <div className="phone">
+      <h1 style={{ color: 'var(--crit)' }}>{t('sos.title')}</h1>
+      {guest && <div className="notice small">{t('sos.anon')}</div>}
+      <div className="card pad stack lg">
+        <div className="field">
+          <span id="sos-what">{t('sos.what')}</span>
+          <div className="cat-grid four" role="group" aria-labelledby="sos-what">
+            {SOS_TILES.map((c) => (
+              <button key={c} className={`cat-tile${category === c ? ' on' : ''}`} onClick={() => setCategory(c)} aria-pressed={category === c}>
+                <CatIcon c={c} size={26} />
+                <span>{catLabel(c, lang)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="field">
+          <span>{t('sos.where')}</span>
+          <div className="sos-loc" aria-live="polite">
+            {locLine}
+            {(!place || place.source === 'manual') && !choosing && (
+              <button type="button" className="link-btn" onClick={() => setChoosing(true)}>
+                {t('sos.loc.choose')}
+              </button>
+            )}
+          </div>
+          {choosing && <AreaPickers place={place ?? placeFromPoint('ibn', 'Bodija')} onChange={setPlace} idPrefix="sos" />}
+        </div>
+      </div>
+      {waiting ? (
+        <div className="notice warn" role="status">
+          {t('sos.sending')}
+        </div>
+      ) : !confirm ? (
+        <>
+          <HoldButton label={t('sos.hold')} holding={t('sos.holding')} onDone={send} />
+          <button className="btn lg block" onClick={() => setConfirm(true)}>
+            {t('sos.or')}
+          </button>
+        </>
+      ) : (
+        <div className="card pad stack" style={{ borderColor: 'var(--crit)' }}>
+          <b>{`SOS · ${catLabel(category, lang)} · ${place ? `${place.area}, ${lgaOf(place.lgaId).name}` : t('sos.loc.unknown')}`}</b>
+          <button className="btn danger lg block" onClick={send}>
+            {t('sos.confirm')}
+          </button>
+          <button className="btn lg block" onClick={() => setConfirm(false)}>
+            {t('sos.cancel')}
+          </button>
+        </div>
+      )}
+      <p className="tiny muted center">{t('sos.call')}</p>
+    </div>
+  );
+}
+
+const vibrate = (p: number | number[]) => {
+  try {
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) navigator.vibrate(p);
+  } catch {
+    /* not supported */
+  }
+};
+
+/** Press-and-hold: the same 2 s ring and haptics for citizen SOS and Officer SOS (§3). */
+export function HoldButton({ label, holding, onDone, ms = SOS_HOLD_MS, text = 'SOS', small }: { label: string; holding: string; onDone: () => void; ms?: number; text?: string; small?: boolean }) {
+  const [p, setP] = useState(0);
+  const startRef = useRef<number>(0);
+  const raf = useRef<number>(0);
+  const stop = () => {
+    cancelAnimationFrame(raf.current);
+    startRef.current = 0;
+    setP(0);
+  };
+  const tickFn = () => {
+    const v = Math.min(1, (performance.now() - startRef.current) / ms);
+    setP(v);
+    if (v >= 1) {
+      startRef.current = 0;
+      vibrate([100, 50, 100]);
+      onDone();
+      return;
+    }
+    raf.current = requestAnimationFrame(tickFn);
+  };
+  const begin = () => {
+    startRef.current = performance.now();
+    vibrate(50);
+    raf.current = requestAnimationFrame(tickFn);
+  };
+  useEffect(() => () => cancelAnimationFrame(raf.current), []);
+  const R = 54;
+  const C = 2 * Math.PI * R;
+  return (
+    <button
+      className={`hold${small ? ' small' : ''}`}
+      data-hold-ms={ms}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        begin();
+      }}
+      onPointerUp={stop}
+      onPointerLeave={() => p > 0 && p < 1 && stop()}
+      onKeyDown={(e) => (e.key === ' ' || e.key === 'Enter') && !startRef.current && begin()}
+      onKeyUp={stop}
+      onContextMenu={(e) => e.preventDefault()}
+      aria-label={label}
+    >
+      <svg width="132" height="132" viewBox="0 0 132 132" aria-hidden>
+        <circle cx="66" cy="66" r={R} className="ring-bg" />
+        <circle cx="66" cy="66" r={R} className="ring" strokeDasharray={C} strokeDashoffset={C * (1 - p)} />
+        <text x="66" y="74" textAnchor="middle" className="ring-text">
+          {text}
+        </text>
+      </svg>
+      <span>{p > 0 ? holding : label}</span>
+    </button>
+  );
+}
+
+function SosSent({ refNo }: { refNo: string }) {
+  const [lang, t] = useLang();
+  useStore((s) => s.incidents);
+  const i = incidentByRef(refNo);
+  const [place, setPlace] = useState<Place>(() => placeFromPoint('ibn', 'Bodija'));
+  return (
+    <div className="phone">
+      <div className="card receipt sos-sent">
+        <div className="big-check sos">
+          <Icon name="check" size={34} />
+        </div>
+        <h1>{t('sos.sent')}</h1>
+        <p>{t('sos.safe')}</p>
+        <div className="muted small">{t('r.ref')}</div>
+        <div className="ref mono">{refNo}</div>
+        <div className="notice warn small">{t('r.save')}</div>
+        {i?.locationUnknown && (
+          <div className="card pad stack" style={{ textAlign: 'left' }}>
+            <b>{t('sos.loc.unknown')}</b>
+            <span className="small">{t('sos.addarea.sub')}</span>
+            <h3>{t('sos.addarea')}</h3>
+            <AreaPickers place={place} onChange={setPlace} idPrefix="sosadd" />
+            <button className="btn primary lg block" onClick={() => run(errText(addSosLocation(refNo, place.lgaId, place.area, place.lat, place.lng), lang), t('sos.addarea.done'))}>
+              {t('sos.addarea.save')}
+            </button>
+          </div>
+        )}
+        {i && (
+          <div className="stack" style={{ textAlign: 'left' }}>
+            <div className="row between">
+              <b>{t('sos.live')}</b>
+              <StatusPill i={i} lang={lang} big />
+            </div>
+            <Stepper i={i} safe lang={lang} compact />
+          </div>
+        )}
+        <button className="btn primary lg block" onClick={() => go(`/track/${refNo}`)}>
+          {t('r.track')}
+        </button>
+        <p className="tiny muted">{t('sos.call')}</p>
+      </div>
+    </div>
+  );
+}
+
+// ---------- My reports ----------
+
 export function MyReports() {
   const me = persona();
   const at = useNow();
-  const incidents = useStore((s) => s.incidents);
-  const mine = incidents.filter((i) => i.reports.some((r) => r.reporter?.personId === me.id));
+  const [lang, t] = useLang();
+  const s = useStore((x) => x);
+  const f = useQuery().get('f') ?? undefined;
+  const mine = myReports(me, s, at, f);
+  const FKEY: Record<string, 'cd.open' | 'cd.progress' | 'cd.waiting' | 'cd.closed'> = { open: 'cd.open', progress: 'cd.progress', waiting: 'cd.waiting', closed: 'cd.closed' };
   return (
-    <div className="phone" style={{ maxWidth: 640 }}>
-      <h1>My reports</h1>
-      {!mine.length && <div className="empty">You haven't reported anything yet.</div>}
+    <div className="phone">
+      <h1>{t('home.mine')}</h1>
+      {f && FKEY[f] && (
+        <div className="row between my-filter">
+          <span className="chip on">{t('my.filter', { f: t(FKEY[f]) })}</span>
+          <a href="#/my">{t('my.all')}</a>
+        </div>
+      )}
+      <a className="misconduct-link" href="#/misconduct">
+        {t('my.misconduct')}
+      </a>
+      {!mine.length && (
+        <div className="empty">
+          {t('my.empty')} <a href="#/report">{t('home.report')}</a>
+        </div>
+      )}
       {mine.map((i) => {
         const r = i.reports.find((x) => x.reporter?.personId === me.id)!;
+        const confirm = i.status === 'resolved' && dep.categories.find((c) => c.id === i.category)?.citizenVerification;
         return (
-          <div key={i.id} className="card pad stack" style={{ cursor: 'pointer' }} onClick={() => go(`/track/${r.ref}`)}>
+          <button key={i.id} className="card pad stack report-card" onClick={() => go(`/track/${r.ref}`)}>
             <div className="row between">
-              <span className="mono small">{r.ref}</span>
-              <Stage i={i} />
+              <span className="row" style={{ gap: 8 }}>
+                <CatIcon c={i.category} size={18} />
+                <span className="mono small">{r.ref}</span>
+              </span>
+              <StatusPill i={i} lang={lang} cta={!!confirm} />
             </div>
-            <b>{i.title}</b>
+            <b>{i.restricted ? (lang === 'yo' ? catLabel(i.category, lang) : subLabel(i.category, i.subcategory)) : i.title}</b>
+            <Stepper i={i} compact safe lang={lang} />
             <div className="small muted">
-              {i.area} · {ago(r.submittedAt, at)}
-              {i.status === 'awaiting_verification' && <span className="badge warn" style={{ marginLeft: 8 }}>Please confirm</span>}
+              {`${i.area} · ${ago(r.submittedAt, at, lang)}`}
+              {confirm && (
+                <span className="badge warn" style={{ marginLeft: 8 }}>
+                  {t('t.fixed')}
+                </span>
+              )}
             </div>
-          </div>
+          </button>
         );
       })}
     </div>
   );
 }
 
-/** Public tracking by reference: works for anonymous reporters too. */
+// ---------- Tracking (no sign-in) ----------
+
 export function Track({ initial }: { initial?: string }) {
+  const [lang, t] = useLang();
   const [ref, setRef] = useState(initial ?? '');
   const [q, setQ] = useState(initial ?? '');
   useStore((s) => s.incidents);
+  useNow(5000);
   const i = q ? incidentByRef(q) : undefined;
   const r = i?.reports.find((x) => x.ref === q.trim().toUpperCase()) ?? i?.reports[0];
+  useEffect(() => {
+    if (i && signedIn()) markCaseRead(i.id);
+  }, [i?.id]);
+  const civicConfirm = i && i.status === 'resolved' && dep.categories.find((c) => c.id === i.category)?.citizenVerification;
+  const who = !i ? '' : i.status === 'pending' || i.status === 'verified' ? (i.restricted ? t('t.control') : t('t.central')) : i.restricted ? t('t.secunit') : agency(i.agencyId)?.short;
   return (
     <div className="phone">
-      <h1>Track a report</h1>
-      <div className="row">
-        <input className="input mono" style={{ flex: 1 }} value={ref} onChange={(e) => setRef(e.target.value)} placeholder="OY-SEC-260930-00482" />
-        <button className="btn primary" onClick={() => setQ(ref)}>
-          Track
-        </button>
-      </div>
-      {q && !i && <div className="empty">No report with that reference.</div>}
+      <h1>{t('t.title')}</h1>
+      <form
+        className="row track-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setQ(ref);
+          go(`/track/${ref.trim().toUpperCase()}`);
+        }}
+      >
+        <label className="field" style={{ flex: 1 }}>
+          <span>{t('t.refLabel')}</span>
+          <input className="input mono lg" value={ref} onChange={(e) => setRef(e.target.value)} placeholder="OY-SEC-261016-00482" />
+        </label>
+        <button className="btn primary lg">{t('t.go')}</button>
+      </form>
+      {q && !i && (
+        <div className="empty" role="alert">
+          {t('t.notfound')}
+        </div>
+      )}
       {i && r && (
-        <div className="card pad stack">
+        <div className="card pad stack lg">
           <div className="row between">
             <span className="mono">{r.ref}</span>
-            <Stage i={i} />
+            <StatusPill i={i} lang={lang} big cta={!!civicConfirm} />
           </div>
-          <b>{i.restricted ? subLabel(i.category, i.subcategory) : i.title}</b>
+          <p className="small stx">{statusExplain(i, lang)}</p>
+          <div className="row" style={{ gap: 8 }}>
+            <CatIcon c={i.category} size={20} />
+            <b>{i.restricted ? catLabel('security', lang) : i.title}</b>
+          </div>
           <div className="small muted">
-            {i.area}, {lgaOf(i.lgaId).name}
-            {!i.restricted && ` · ${agency(i.agencyId)?.short}`}
+            {`${i.area}, ${lgaOf(i.lgaId).name}${i.reports.length > 1 ? ` · ${t('t.many', { n: i.reports.length })}` : ''}`}
           </div>
-          {i.reports.length > 1 && <div className="small">{i.reports.length} people reported this.</div>}
-          <div className="hr" />
-          <div className="stack" style={{ gap: 6 }}>
-            {i.updates
-              .slice()
-              .reverse()
-              .map((u, k) => (
-                <div key={k} className="small">
-                  <span className="muted tnum">{hhmm(u.at)}</span> {u.text}
-                </div>
-              ))}
+          <Stepper i={i} safe lang={lang} />
+          <div className="kv">
+            <span>{t('t.who')}</span>
+            <b>{who}</b>
           </div>
-          {i.status === 'awaiting_verification' && (
+          {civicConfirm && (
             <div className="notice warn stack">
-              <b>Government has marked your report as resolved. Has the issue been resolved?</b>
-              <div className="row">
-                <button className="btn primary" onClick={() => actions.verify(i.id, 'yes', r.ref)}>
-                  Yes
+              <b>{t('t.fixed')}</b>
+              <span className="small">{t('t.saysfixed', { unit: agency(i.agencyId)?.short ?? '' })}</span>
+              <div className="confirm-fix">
+                <button className="btn primary lg" onClick={() => run(errText(actions.confirmFix(i.id, 'yes', r.ref), lang), t('t.closedOk'))}>
+                  {t('t.yes')}
                 </button>
-                <button className="btn" onClick={() => actions.verify(i.id, 'partial', r.ref)}>
-                  Partly
+                <button className="btn lg" onClick={() => run(errText(actions.confirmFix(i.id, 'partial', r.ref), lang), t('t.reopenOk'))}>
+                  {t('t.partly')}
                 </button>
-                <button className="btn danger" onClick={() => actions.verify(i.id, 'no', r.ref)}>
-                  No
+                <button className="btn danger lg" onClick={() => run(errText(actions.confirmFix(i.id, 'no', r.ref), lang), t('t.reopenOk'))}>
+                  {t('t.no')}
                 </button>
               </div>
             </div>
           )}
-          {i.restricted && isOpen(i) && <p className="tiny muted">For your safety, security reports show progress only — not which unit or officer is responding.</p>}
+          <div className="stack" style={{ gap: 6 }}>
+            <h3>{t('t.updates')}</h3>
+            {!i.updates.length && <div className="small muted">{t('t.noupdates')}</div>}
+            {i.updates
+              .slice()
+              .reverse()
+              .map((u, k) => (
+                <div key={k} className="small update">
+                  <span className="muted tnum">{hhmm(u.at)}</span> {u.msg ? msgText(u.msg, lang) : u.text}
+                </div>
+              ))}
+          </div>
+          {i.status === 'pending' && (
+            <button className="btn ghost" onClick={() => run(errText(actions.cancelReport(i.id, r.ref), lang), t('t.cancelOk'))}>
+              {t('t.cancel')}
+            </button>
+          )}
+          {(i.status === 'closed' || i.status === 'referred') && !i.officerSos && <ConductForm caseId={i.id} reportRef={r.ref} />}
+          {i.restricted && isOpen(i) && <p className="tiny muted">{t('t.secnote')}</p>}
+          <a className="misconduct-link" href={`#/misconduct?ref=${r.ref}`}>
+            {t('t.misconduct')}
+          </a>
         </div>
       )}
     </div>
   );
 }
 
-// ---------- WhatsApp simulator ----------
-
-type Msg = { from: 'bot' | 'me'; text: string };
-
-function WhatsApp() {
-  const me = persona();
-  const [msgs, setMsgs] = useState<Msg[]>([{ from: 'bot', text: `Welcome to ${dep.product} 👁️\nTell us what is happening. You can type or send a voice note (English, Yoruba or Pidgin).\nIn danger now? Reply SOS.` }]);
-  const [step, setStep] = useState<'what' | 'where' | 'identity' | 'done'>('what');
-  const [draft, setDraft] = useState({ text: '', lgaId: '', area: '', sos: false });
-  const [input, setInput] = useState('');
-  const areas = dep.lgas.flatMap((l) => l.areas.map((a) => ({ l, a })));
-
-  const say = (text: string) => {
-    const next: Msg[] = [...msgs, { from: 'me', text }];
-    const t = text.trim();
-    if (step === 'what' || step === 'done') {
-      const sos = /^sos\b/i.test(t);
-      setDraft({ text: sos ? t.replace(/^sos\s*/i, '') || 'SOS via WhatsApp' : t, lgaId: '', area: '', sos });
-      next.push({ from: 'bot', text: 'Where is this? Reply with the area or landmark (e.g. Mokola, Ojoo, Sabo). Or share your location 📍' });
-      setStep('where');
-    } else if (step === 'where') {
-      const hit = areas.find((x) => x.a.toLowerCase() === t.toLowerCase()) ?? areas.find((x) => x.a.toLowerCase().includes(t.toLowerCase()) || t.toLowerCase().includes(x.a.toLowerCase()));
-      if (!hit) next.push({ from: 'bot', text: "Sorry, I couldn't find that area. Try a nearby area or market name." });
-      else {
-        setDraft({ ...draft, lgaId: hit.l.id, area: hit.a });
-        next.push({ from: 'bot', text: `${hit.a}, ${hit.l.name}. How should we treat your identity?\n1 — Standard (we can contact you)\n2 — Confidential\n3 — Anonymous` });
-        setStep('identity');
-      }
-    } else if (step === 'identity') {
-      const identity: Identity = t.startsWith('3') ? 'anonymous' : t.startsWith('2') ? 'confidential' : 'standard';
-      const res = submitReport({ text: draft.text, lgaId: draft.lgaId, area: draft.area, identity, channel: 'whatsapp', reporter: { personId: me.id, name: me.name, phone: me.phone }, sos: draft.sos });
-      next.push({
-        from: 'bot',
-        text: `✅ Report received.\nReport ID: ${res.ref}\nLocation: ${draft.area}\nStatus: ${res.incident.restricted ? 'The control room is reviewing it now' : 'Being reviewed'}${res.merged ? `\n${res.incident.reports.length} people have reported this.` : ''}\n\nReply with a new message any time to report something else.`,
-      });
-      setStep('done');
-    }
-    setMsgs(next);
-    setInput('');
-  };
-
+/** "How were you treated?" — asked when a case is Closed (v2.3 §4.1). */
+export function ConductForm({ caseId, reportRef }: { caseId: string; reportRef: string }) {
+  const [lang, t] = useLang();
+  const done = useStore((s) => feedbackFor(s, reportRef));
+  const [money, setMoney] = useState<boolean>();
+  const [respect, setRespect] = useState<'yes' | 'somewhat' | 'no'>();
+  const [speed, setSpeed] = useState(0);
+  const [text, setText] = useState('');
+  if (done) return <div className="notice good small">{t('cf.thanks')}</div>;
+  const n = `cf-${reportRef}`;
   return (
-    <Card title="WhatsApp — OyoEye" right={<span className="tiny muted">simulated</span>}>
-      <div className="stack" style={{ background: 'var(--surface-2)', borderRadius: 10, padding: 10, minHeight: 360, maxHeight: 520, overflowY: 'auto' }}>
-        {msgs.map((m, k) => (
-          <div key={k} style={{ justifySelf: m.from === 'me' ? 'end' : 'start', maxWidth: '85%', background: m.from === 'me' ? 'color-mix(in srgb, #25d366 22%, var(--surface))' : 'var(--surface)', border: '1px solid var(--line)', borderRadius: 10, padding: '7px 10px', whiteSpace: 'pre-wrap', fontSize: 13 }}>
-            {m.text}
+    <div className="conduct stack">
+      <h3>{t('cf.title')}</h3>
+      <fieldset className="field">
+        <legend>{t('cf.money')}</legend>
+        <div className="radios">
+          <label className={money === true ? 'on' : ''}>
+            <input type="radio" name={`${n}-money`} checked={money === true} onChange={() => setMoney(true)} /> {t('t.yesShort')}
+          </label>
+          <label className={money === false ? 'on' : ''}>
+            <input type="radio" name={`${n}-money`} checked={money === false} onChange={() => setMoney(false)} /> {t('t.no')}
+          </label>
+        </div>
+      </fieldset>
+      <fieldset className="field">
+        <legend>{t('cf.respect')}</legend>
+        <div className="radios">
+          {(['yes', 'somewhat', 'no'] as const).map((v) => (
+            <label key={v} className={respect === v ? 'on' : ''}>
+              <input type="radio" name={`${n}-respect`} checked={respect === v} onChange={() => setRespect(v)} /> {v === 'yes' ? t('t.yesShort') : v === 'somewhat' ? t('cf.somewhat') : t('t.no')}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className="field">
+        <legend>{t('cf.speed')}</legend>
+        <div className="stars">
+          {[1, 2, 3, 4, 5].map((k) => (
+            <button key={k} type="button" className={k <= speed ? 'on' : ''} onClick={() => setSpeed(k)} aria-label={t('cf.stars', { n: k })} aria-pressed={k <= speed}>
+              ★
+            </button>
+          ))}
+        </div>
+      </fieldset>
+      <label className="field">
+        <span>{t('cf.more')}</span>
+        <textarea className="input" rows={2} value={text} onChange={(e) => setText(e.target.value)} />
+      </label>
+      <button className="btn primary lg block" disabled={money === undefined || !respect} onClick={() => run(errText(conduct.answer(caseId, reportRef, { money: !!money, respect: respect!, speed: speed || undefined, text }, 'track'), lang), money || respect === 'no' ? t('cf.ok.panel') : t('cf.ok'))}>
+        {t('cf.send')}
+      </button>
+      <p className="tiny muted">{t('cf.note')}</p>
+    </div>
+  );
+}
+
+/** Report misconduct — always available, with or without a case reference. */
+export function Misconduct({ ref0 = '' }: { ref0?: string }) {
+  const [lang, t] = useLang();
+  const [ref, setRef] = useState(ref0);
+  const [text, setText] = useState('');
+  const [money, setMoney] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [tried, setTried] = useState(false);
+  if (sent)
+    return (
+      <div className="phone">
+        <div className="card receipt">
+          <div className="big-check">
+            <Icon name="check" size={34} />
           </div>
-        ))}
+          <h1>{t('mc.thanks')}</h1>
+          <p>{t('mc.thanks.sub')}</p>
+          <button className="btn primary lg block" onClick={() => go('')}>
+            {t('mc.done')}
+          </button>
+        </div>
       </div>
-      <form
-        className="row"
-        style={{ marginTop: 10 }}
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (input.trim()) say(input);
-        }}
-      >
-        <input className="input" style={{ flex: 1 }} value={input} onChange={(e) => setInput(e.target.value)} placeholder={step === 'identity' ? '1, 2 or 3' : 'Type a message'} />
-        <button className="btn primary">Send</button>
-      </form>
-    </Card>
+    );
+  const short = text.trim().length < 8;
+  return (
+    <div className="phone">
+      <h1>{t('mc.title')}</h1>
+      <div className="notice small">{t('mc.intro')}</div>
+      <div className="card pad stack lg">
+        <label className="field">
+          <span>{t('mc.ref')}</span>
+          <input className="input mono" value={ref} onChange={(e) => setRef(e.target.value)} placeholder="OY-SEC-…" />
+        </label>
+        <label className="optin">
+          <input type="checkbox" checked={money} onChange={(e) => setMoney(e.target.checked)} />
+          <span>
+            <b>{t('mc.money')}</b>
+          </span>
+        </label>
+        <label className="field">
+          <span>{t('mc.what')}</span>
+          <textarea className="input" rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder={t('mc.what.ph')} aria-invalid={(tried && short) || undefined} />
+          {tried && short && <span className="field-err">{t('mc.what.err')}</span>}
+        </label>
+        <button className="btn primary lg block" aria-disabled={short} onClick={() => (short ? setTried(true) : run(errText(conduct.report({ ref: ref || undefined, text, money }), lang)) && setSent(true))}>
+          {t('mc.send')}
+        </button>
+      </div>
+    </div>
   );
 }

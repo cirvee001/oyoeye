@@ -1,3 +1,4 @@
+import { fmtLong, fmtNum, fmtTimeWat, lagosHour } from '../format';
 import { useState, type ReactNode } from 'react';
 import { countBy, hotspots, lastDays, metrics, securityClusters, startOfDay } from '../platform/analytics';
 import { DAY, HOUR, dur, isOpen, isOverdue } from '../platform/engine';
@@ -8,114 +9,6 @@ import { Bars, Card, CaseTable, MapView, Sev, Stat, dayTime, incidentPoints, pct
 const catLabel = (c: CategoryId) => cat(c).label;
 const pctChange = (x: number) => `${x >= 0 ? '+' : ''}${Math.round(x * 100)}%`;
 
-// ---------- State live (executive / central command) ----------
-
-export function StateLive() {
-  const at = useNow(10_000);
-  const all = useStore((s) => s.incidents);
-  const visible = all.filter((i) => !i.sensitiveOnly);
-  const today = visible.filter((i) => i.createdAt >= startOfDay(at));
-  const m = metrics(today, at);
-  const week = metrics(lastDays(visible, at, 7), at);
-  const open = visible.filter(isOpen);
-  const overdue = open.filter((i) => isOverdue(i, at));
-  const critOut = overdue.filter((i) => i.severity === 'critical');
-  const byAgency = countBy(overdue, (i) => i.agencyId).slice(0, 6);
-  const hot = hotspots(dep, all, at);
-  const clusters = securityClusters(all, at);
-  const secOpen = open.filter((i) => i.restricted);
-
-  return (
-    <>
-      <div className="page-head">
-        <div>
-          <h1>{dep.state} State live</h1>
-          <p>Exceptions and trends, not an inbox. Click any number to go to the cases behind it.</p>
-        </div>
-      </div>
-      <div className="stats">
-        <Stat k="Reports today" v={m.reports.toLocaleString()} s={`${m.total} incidents after merging duplicates`} />
-        <Stat k="Critical incidents today" v={m.critical} s={`${open.filter((i) => i.severity === 'critical').length} still active`} alert={open.some((i) => i.severity === 'critical')} />
-        <Stat k="Resolved today" v={m.resolved} />
-        <Stat k="Active" v={open.length} />
-        <Stat k="Overdue" v={overdue.length} alert={overdue.length > 0} />
-        <Stat k="Median acknowledgement" v={dur(week.medianAck)} s="last 7 days" />
-        <Stat k="Median resolution" v={dur(week.medianResolve)} s="last 7 days" />
-      </div>
-      <div className="grid split">
-        <Card title="State map — active incidents" right={<Legend />}>
-          <MapView points={incidentPoints(open, at)} />
-        </Card>
-        <div className="stack lg">
-          <Card title="Attention required">
-            <div className="stack">
-              {critOut.length > 0 && (
-                <div className="notice bad">
-                  <b>{critOut.length} critical cases outside target</b>
-                  <div className="small">{critOut.slice(0, 3).map((i) => `${subLabel(i.category, i.subcategory)} — ${i.area}`).join(' · ')}</div>
-                </div>
-              )}
-              <h3>Overdue by agency</h3>
-              <Bars rows={byAgency.map(([id, n]) => ({ label: agency(id)?.short ?? id, n }))} color="var(--crit)" />
-            </div>
-          </Card>
-          <Card title="Security at a glance" right={<a href="#/security">Security picture →</a>}>
-            <div className="stats" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-              <Stat k="Active" v={secOpen.length} />
-              <Stat k="Awaiting triage" v={secOpen.filter((i) => i.status === 'triage').length} />
-              <Stat k="Pattern alerts" v={clusters.length} alert={clusters.length > 0} />
-            </div>
-          </Card>
-        </div>
-      </div>
-      <div className="grid g2">
-        <Card title="Emerging hotspots" right={<span className="small muted">Last 72h vs the 72h before</span>}>
-          {!hot.length ? (
-            <div className="empty">Nothing unusual</div>
-          ) : (
-            <div className="stack">
-              {hot.map((h) => (
-                <div key={h.lga.id + h.category} className="row between">
-                  <span>
-                    <b>{h.lga.name}:</b> {catLabel(h.category)} reports
-                  </span>
-                  <span className="badge warn">
-                    {pctChange(h.change)} · {h.n} reports
-                  </span>
-                </div>
-              ))}
-              {clusters.slice(0, 2).map((c) => (
-                <div key={c.area} className="row between">
-                  <span>
-                    <b>{c.area}, {lgaOf(c.lgaId).name}:</b> security reports clustered
-                  </span>
-                  <span className="badge bad">{c.incidents.length} in 72h</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-        <Card title="Today by category">
-          <Bars rows={countBy(today, (i) => i.category).map(([c, n]) => ({ label: catLabel(c), n }))} />
-        </Card>
-      </div>
-    </>
-  );
-}
-
-function Legend() {
-  return (
-    <span className="row tiny muted" style={{ gap: 10 }}>
-      {(['critical', 'high', 'normal', 'low'] as const).map((s) => (
-        <span key={s} className="row" style={{ gap: 4 }}>
-          <span className="dot" style={{ background: `var(--${s === 'critical' ? 'crit' : s})` }} />
-          {s}
-        </span>
-      ))}
-    </span>
-  );
-}
-
 // ---------- Security picture ----------
 
 export function SecurityPicture() {
@@ -125,9 +18,9 @@ export function SecurityPicture() {
   const sec = lastDays(all, at, 7).filter((i) => i.category === 'security');
   const visible = sec.filter((i) => !i.sensitiveOnly);
   const m = metrics(visible, at);
-  const triage = visible.filter((i) => i.t.triaged).map((i) => i.t.triaged! - i.createdAt);
+  const triage = visible.filter((i) => i.t.verified).map((i) => i.t.verified! - i.createdAt);
   const clusters = securityClusters(all, at);
-  const hours = Array.from({ length: 24 }, (_, h) => visible.filter((i) => new Date(i.createdAt).getHours() === h).length);
+  const hours = Array.from({ length: 24 }, (_, h) => visible.filter((i) => lagosHour(i.createdAt) === h).length);
   const units = dep.agencies.filter((a) => a.kind === 'police' || a.kind === 'corps');
   const recent = all.filter((i) => i.category === 'security' && !i.sensitiveOnly && i.createdAt > at - 72 * HOUR);
 
@@ -260,17 +153,17 @@ export function Brief() {
       <div className="page-head">
         <div>
           <h1>{dep.product} morning brief</h1>
-          <p>{new Date(at).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })} · generated from platform records</p>
+          <p>{fmtLong(at)} · {fmtTimeWat(at)} · generated from platform records</p>
         </div>
       </div>
       <Ask />
       <div className="grid g2">
         <Card title="Yesterday">
           <div className="stats" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-            <Stat k="Citizen reports" v={m.reports.toLocaleString()} />
+            <Stat k="Citizen reports" v={fmtNum(m.reports)} />
             <Stat k="Resolved" v={m.resolved} />
             <Stat k="Still active" v={m.open} />
-            <Stat k="Awaiting citizen confirmation" v={yest.filter((i) => i.status === 'awaiting_verification').length} />
+            <Stat k="Awaiting citizen confirmation" v={yest.filter((i) => i.status === 'resolved' && cat(i.category).citizenVerification).length} />
           </div>
         </Card>
         <Card title="Significant events">
@@ -342,7 +235,7 @@ function answer(q: string, all: Incident[], at: number): { text: string; rows?: 
     rows = rows.filter((i) => isOverdue(i, at) || (i.t.resolved && i.t.resolved > i.resolveDueAt));
     bits.unshift('overdue / target-breached');
   } else if (/resolved|fixed|closed/.test(s)) {
-    rows = rows.filter((i) => i.status === 'resolved');
+    rows = rows.filter((i) => i.status === 'closed' || i.status === 'resolved');
     bits.unshift('resolved');
   }
   const hrs = s.match(/(\d+)\s*(h|hour)/);
@@ -415,67 +308,6 @@ function Ask() {
         </div>
       )}
     </Card>
-  );
-}
-
-// ---------- LGA chairman ----------
-
-export function LgaDashboard() {
-  const me = persona();
-  const at = useNow(10_000);
-  const all = useStore((s) => s.incidents);
-  const lga = lgaOf(me.lgaId ?? 'ibn');
-  const here = all.filter((i) => i.lgaId === lga.id);
-  const civic = here.filter((i) => !i.restricted);
-  const today = civic.filter((i) => i.createdAt >= startOfDay(at));
-  const week = lastDays(civic, at, 7);
-  const m = metrics(today, at);
-  const secWeek = lastDays(here.filter((i) => i.restricted && !i.sensitiveOnly), at, 7);
-
-  return (
-    <>
-      <div className="page-head">
-        <div>
-          <h1>{lga.name}</h1>
-          <p>Everything citizens report in your LGA — including cases that a state agency owns.</p>
-        </div>
-      </div>
-      <div className="stats">
-        <Stat k="Reports today" v={m.reports} />
-        <Stat k="Resolved" v={m.resolved} />
-        <Stat k="In progress" v={m.open} />
-        <Stat k="Overdue (all open)" v={civic.filter((i) => isOverdue(i, at)).length} alert />
-        <Stat k="Critical today" v={m.critical} />
-        <Stat k="Security reports (7 days)" v={secWeek.length} s="handled by the 615 control room" />
-      </div>
-      <div className="grid g3">
-        <Card title="Most reported (7 days)">
-          <Bars rows={countBy(week, (i) => i.category).map(([c, n]) => ({ label: catLabel(c), n }))} />
-        </Card>
-        <Card title="Areas with highest activity">
-          <Bars rows={countBy(week, (i) => i.area).slice(0, 6).map(([a, n]) => ({ label: a, n }))} />
-        </Card>
-        <Card title="Who owes your residents">
-          <Bars rows={countBy(civic.filter((i) => isOverdue(i, at)), (i) => i.agencyId).slice(0, 6).map(([id, n]) => ({ label: agency(id)?.short ?? id, n }))} color="var(--crit)" />
-        </Card>
-      </div>
-      <div className="grid split">
-        <Card title="Open cases" pad={false}>
-          <CaseTable rows={civic.filter(isOpen)} at={at} />
-        </Card>
-        <div className="stack lg">
-          <Card title="Map">
-            <MapView points={incidentPoints(civic.filter(isOpen), at)} metro={lga.metro} labels />
-          </Card>
-          <Card title="Security in your LGA (7 days)">
-            <p className="small muted" style={{ marginBottom: 10 }}>
-              Counts by area only. Details, locations and reporters stay with the control room.
-            </p>
-            <Bars rows={countBy(secWeek, (i) => i.area).map(([a, n]) => ({ label: a, n }))} color="var(--sealed)" />
-          </Card>
-        </div>
-      </div>
-    </>
   );
 }
 
@@ -628,7 +460,7 @@ export function Transparency() {
   const sec = month.filter((i) => i.restricted);
   const m = metrics(civic, at);
   const sm = metrics(sec.filter((i) => !i.sensitiveOnly), at);
-  const fixed = civic.filter((i) => i.status === 'resolved' && i.verification === 'yes').sort((a, b) => (b.t.resolved ?? 0) - (a.t.resolved ?? 0)).slice(0, 8);
+  const fixed = civic.filter((i) => i.status === 'closed' && i.verification === 'yes').sort((a, b) => (b.t.resolved ?? 0) - (a.t.resolved ?? 0)).slice(0, 8);
 
   return (
     <>
@@ -639,7 +471,7 @@ export function Transparency() {
         </div>
       </div>
       <div className="stats">
-        <Stat k="Reports this period" v={(m.reports + sm.reports).toLocaleString()} />
+        <Stat k="Reports this period" v={fmtNum(m.reports + sm.reports)} />
         <Stat k="Civic issues resolved" v={m.resolved} s={pct(m.resolved, m.total)} />
         <Stat k="Median civic resolution" v={dur(m.medianResolve)} />
         <Stat k="Confirmed fixed by citizens" v={pct(m.verifiedYes, m.verified)} />
@@ -676,4 +508,3 @@ export function Transparency() {
     </>
   );
 }
-

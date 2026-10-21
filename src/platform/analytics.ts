@@ -1,15 +1,13 @@
 import { DAY, HOUR, isOpen, isOverdue, median } from './engine';
 import type { CategoryId, Deployment, Incident } from './types';
 
-export const startOfDay = (t: number) => {
-  const d = new Date(t);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-};
+/** Midnight in Oyo (WAT, UTC+1), whatever the machine's time zone. */
+export const startOfDay = (t: number) => Math.floor((t + HOUR) / DAY) * DAY - HOUR;
 
 export function metrics(rows: Incident[], at: number) {
   const acked = rows.filter((i) => i.t.acknowledged);
-  const resolved = rows.filter((i) => i.status === 'resolved' || i.status === 'investigation');
+  // Work done: resolved by the responder (awaiting confirmation), closed or referred.
+  const resolved = rows.filter((i) => ['resolved', 'closed', 'referred'].includes(i.status) && i.t.resolved);
   const closedTimes = resolved.filter((i) => i.t.resolved).map((i) => i.t.resolved! - i.createdAt);
   const arrived = rows.filter((i) => i.t.onScene && i.arriveDueAt);
   const verified = rows.filter((i) => i.verification && i.verification !== 'timeout');
@@ -20,7 +18,8 @@ export function metrics(rows: Incident[], at: number) {
     overdue: rows.filter((i) => isOverdue(i, at)).length,
     critical: rows.filter((i) => i.severity === 'critical').length,
     criticalOpen: rows.filter((i) => i.severity === 'critical' && isOpen(i)).length,
-    invalid: rows.filter((i) => i.status === 'invalid').length,
+    invalid: rows.filter((i) => i.status === 'rejected').length,
+    closed: rows.filter((i) => i.status === 'closed' || i.status === 'referred').length,
     reopened: rows.filter((i) => i.reopenCount > 0).length,
     medianAck: median(acked.map((i) => i.t.acknowledged! - i.createdAt)),
     medianResolve: median(closedTimes),
@@ -65,7 +64,7 @@ export function hotspots(dep: Deployment, all: Incident[], at: number, filter: (
 
 /** Places (never people) where security reports repeat. */
 export function securityClusters(all: Incident[], at: number, hours = 72) {
-  const rows = all.filter((i) => i.category === 'security' && !i.sensitiveOnly && i.status !== 'invalid' && i.createdAt > at - hours * HOUR);
+  const rows = all.filter((i) => i.category === 'security' && !i.sensitiveOnly && i.status !== 'rejected' && i.createdAt > at - hours * HOUR);
   const byArea = new Map<string, Incident[]>();
   rows.forEach((i) => {
     const k = `${i.lgaId}|${i.area}`;
@@ -82,7 +81,7 @@ export function securityClusters(all: Incident[], at: number, hours = 72) {
       first: Math.min(...xs.map((i) => i.createdAt)),
       last: Math.max(...xs.map((i) => i.createdAt)),
       night: xs.filter((i) => {
-        const h = new Date(i.createdAt).getHours();
+        const h = new Date(i.createdAt + HOUR).getUTCHours(); // hour in Oyo
         return h >= 19 || h < 5;
       }).length,
     }))

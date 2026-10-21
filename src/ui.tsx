@@ -1,7 +1,15 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { MIN, clockState, dur, isOpen, isOverdue } from './platform/engine';
-import type { Incident, Severity } from './platform/types';
-import { agency, cat, dep, levelLabel, lgaOf, now, subLabel } from './store';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { MIN, clockState, distinctReporters, dur, isOpen, isOverdue, pendingHandoff } from './platform/engine';
+import type { CategoryId, Incident, Severity, Status } from './platform/types';
+import { STATUS_COLOR, STATUS_ORDER, STATUS_TONE, statusLabel, tr, type Lang } from './i18n';
+import { agency, cat, dep, handoffTarget, holderLabel, levelLabel, lgaOf, now, persona, stepOf, subLabel, useStore } from './store';
+import { ALERT_FLASH_MS, alertsFor } from './alerts';
+import { handoffClock } from './countdown';
+import { readPhoto } from './photo';
+import { fmtAgo, fmtDateTime, fmtNum, fmtPct, fmtTime, fmtTimeWat, lagosDayStart } from './format';
+import {
+  ArrowRightLeft, Bell, LocateFixed, Navigation, Volume2, VolumeX, Maximize2, Layers, Building2, Download, KeyRound, Megaphone, MessageCircle, Paperclip, Pin, SendHorizontal, Upload, CalendarClock, Camera, ChartColumn, Check, ChevronDown, ChevronLeft, ChevronRight, CircleCheck, CircleHelp, Clock as ClockIcon, Construction, Ellipsis, FileText, Flame, House, Inbox as InboxIcon, LayoutDashboard, ListChecks, ListFilter, LogOut, MapPin, Menu, Mic, PhoneCall, Plus, Route, ScrollText, Search, Shield, Siren, Timer, Trash2, TriangleAlert, User, Users, Waves, X, Zap, type LucideIcon,
+} from 'lucide-react';
 
 export function useNow(ms = 15_000) {
   const [, set] = useState(0);
@@ -13,16 +21,30 @@ export function useNow(ms = 15_000) {
 }
 
 export const go = (path: string) => (location.hash = path);
-export const hhmm = (t?: number) => (t ? new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—');
-export const dayTime = (t: number) => new Date(t).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-export const ago = (t: number, at = now()) => {
+/** "2:15 pm" in Oyo time (see src/format.ts). */
+export const hhmm = (t?: number) => fmtTime(t);
+/** "20/10/2026, 2:15 pm" */
+export const dayTime = (t: number) => fmtDateTime(t);
+/** "12 min ago", "3 h ago", "yesterday" — with the full date and time in Ago's tooltip. */
+export const ago = (t: number, at = now(), lang: Lang = 'en') => {
   const m = Math.round((at - t) / MIN);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  if (m < 1440) return `${Math.floor(m / 60)}h ${m % 60}m ago`;
-  return `${Math.floor(m / 1440)}d ago`;
+  if (lang === 'en') return fmtAgo(t, at);
+  if (m < 1) return tr('ago.now', lang);
+  if (m < 60) return tr('ago.m', lang, { m });
+  const days = Math.round((lagosDayStart(at) - lagosDayStart(t)) / 86_400_000);
+  if (days <= 0) return tr('ago.h', lang, { h: Math.floor(m / 60) });
+  if (days === 1) return tr('ago.y', lang);
+  return tr('ago.d', lang, { d: days });
 };
-export const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : '—');
+/** A relative time that shows the full date and time on hover / long-press. */
+export function Ago({ t, at, lang = 'en' }: { t: number; at?: number; lang?: Lang }) {
+  return (
+    <time dateTime={new Date(t).toISOString()} title={`${fmtDateTime(t)} WAT`}>
+      {ago(t, at ?? now(), lang)}
+    </time>
+  );
+}
+export const pct = (a: number, b: number) => fmtPct(a, b);
 
 export const SEV_COLOR: Record<Severity, string> = { critical: 'var(--crit)', high: 'var(--high)', normal: 'var(--normal)', low: 'var(--low)' };
 
@@ -30,63 +52,132 @@ export function Sev({ s }: { s: Severity }) {
   return <span className={`badge ${s}`}>{s[0].toUpperCase() + s.slice(1)}</span>;
 }
 
-export function stage(i: Incident): { label: string; tone: string } {
-  switch (i.status) {
-    case 'triage':
-      return { label: i.restricted ? 'Awaiting triage' : 'Being reviewed', tone: 'warn' };
-    case 'assigned':
-      return { label: i.restricted ? 'Dispatched' : 'Assigned', tone: 'info' };
-    case 'accepted':
-      return { label: 'Acknowledged', tone: 'info' };
-    case 'in_progress':
-      if (i.restricted || i.category === 'fire') return { label: i.t.onScene ? 'On scene' : 'En route', tone: 'info' };
-      return { label: 'Work in progress', tone: 'info' };
-    case 'awaiting_verification':
-      return { label: 'Awaiting citizen', tone: 'warn' };
-    case 'investigation':
-      return { label: 'Investigation', tone: 'sealed' };
-    case 'resolved':
-      return { label: i.verification === 'timeout' ? 'Resolved (unconfirmed)' : 'Resolved', tone: 'good' };
-    case 'reopened':
-      return { label: 'Reopened', tone: 'bad' };
-    case 'invalid':
-      return { label: i.outcome?.startsWith('False') ? 'False alarm' : 'Closed — invalid', tone: '' };
-  }
-}
+// ---------- status ----------
 
-export function Stage({ i }: { i: Incident }) {
-  const s = stage(i);
-  return <span className={`badge ${s.tone}`}>{s.label}</span>;
-}
-
-/** The clock that matters right now for this case. */
-export function nextClock(i: Incident, at: number) {
-  if (!isOpen(i)) {
-    const total = (i.t.resolved ?? i.t.actionTaken ?? at) - i.createdAt;
-    return { label: 'Took', value: dur(total), tone: i.t.resolved && i.t.resolved > i.resolveDueAt ? 'bad' : 'good' };
-  }
-  const pick = (label: string, due: number) => {
-    const win = due - i.createdAt;
-    const st = clockState(due, undefined, at, win);
-    return { label, value: at > due ? `${dur(at - due)} over` : `${dur(due - at)} left`, tone: st === 'breached' ? 'bad' : st === 'due_soon' ? 'warn' : '' };
-  };
-  if (!i.t.acknowledged) return pick('Acknowledge', i.ackDueAt);
-  if (i.arriveDueAt && !i.t.onScene) return pick('Arrive', i.arriveDueAt);
-  return pick('Resolve', i.resolveDueAt);
-}
-
-export function Clock({ i, at }: { i: Incident; at: number }) {
-  const c = nextClock(i, at);
+/** cta: the citizen must act ("Resolved — please confirm"). */
+export function StatusPill({ i, lang = 'en', big, cta }: { i: Pick<Incident, 'status' | 'verification'>; lang?: Lang; big?: boolean; cta?: boolean }) {
   return (
-    <span className={`badge ${c.tone}`} title={`${c.label} target`}>
-      {c.label}: {c.value}
+    <span className={`pill ${STATUS_TONE[i.status]}${big ? ' big' : ''}${cta && i.status === 'resolved' ? ' cta' : ''}`} title={tr(`mean.${i.status}` as Parameters<typeof tr>[0], lang)}>
+      {cta && i.status === 'resolved' ? tr('st.resolved.cta', lang) : statusLabel(i, lang)}
     </span>
   );
 }
 
-export function Level({ i }: { i: Incident }) {
-  if (i.escalationLevel <= 1) return null;
-  return <span className={`badge ${i.escalationLevel >= 4 ? 'bad' : 'warn'}`}>L{i.escalationLevel} · {levelLabel(i)}</span>;
+/** "What do these mean?" — every step and side state in one plain line (PRD v2.6 §1.3). */
+export function StatusMeanings({ lang = 'en' }: { lang?: Lang }) {
+  const row = (st: Status) => (
+    <li key={st}>
+      <span className="pill-dot" style={{ background: STATUS_COLOR[st] }} aria-hidden />
+      <b>{`${statusLabel({ status: st }, lang)}:`}</b> {tr(`mean.${st}` as Parameters<typeof tr>[0], lang)}
+    </li>
+  );
+  return (
+    <details className="meanings">
+      <summary>{tr('mean.title', lang)}</summary>
+      <div className="meanings-pop" role="note">
+        <div className="tiny muted">{tr('mean.steps', lang)}</div>
+        <ul>{STATUS_ORDER.map(row)}</ul>
+        <div className="tiny muted">{tr('mean.side', lang)}</div>
+        <ul>{(['reopened', 'rejected', 'referred'] as Status[]).map(row)}</ul>
+      </div>
+    </details>
+  );
+}
+
+/** Priority: small dot + word. Red only for critical. */
+export function Priority({ s }: { s: Severity }) {
+  return (
+    <span className={`prio p-${s}`}>
+      <span className="pdot" aria-hidden />
+      {s[0].toUpperCase() + s.slice(1)}
+    </span>
+  );
+}
+
+export const isSos = (i: Incident) => i.reports[0]?.channel === 'sos' || i.subcategory === 'sos';
+
+/** The single most urgent flag for a table row (SOS > Overdue > Handoff pending). */
+export function TopFlag({ i, at }: { i: Incident; at: number }) {
+  if (i.officerSos && isOpen(i)) return <span className="badge solid pulse">OFFICER SOS</span>;
+  if (i.lone && isOpen(i) && i.t.onScene && i.lone.nextDue) {
+    const left = Math.round((i.lone.nextDue - at) / MIN);
+    return <span className={`badge ${left <= 0 ? 'bad' : 'info'}`}>{left > 0 ? `Alone on scene · ${left}m` : 'Alone · check-in due'}</span>;
+  }
+  if (isSos(i) && isOpen(i)) return <span className={`badge solid${i.status === 'pending' ? ' pulse' : ''}`}>SOS</span>;
+  if (isOverdue(i, at)) return <span className="badge bad">Overdue</span>;
+  const h = pendingHandoff(i);
+  if (h) return <span className="badge handoff">Handoff pending</span>;
+  return null;
+}
+
+/** HospEase-style stat card: tinted icon circle, grey label, big number. */
+/** A number card. With "to" it is a link to the matching filtered list (PRD v2.6 §3). */
+export function StatCard({ icon, label, value, sub, tone = 'green', onClick, to, view = 'View' }: { icon: string; label: string; value: ReactNode; sub?: ReactNode; tone?: 'green' | 'blue' | 'amber' | 'red' | 'purple' | 'grey'; onClick?: () => void; to?: string; view?: string }) {
+  const body = (
+    <>
+      <span className={`sc-ico t-${tone}`}>
+        <Icon name={icon} size={20} />
+      </span>
+      <div className="sc-label">{label}</div>
+      <div className="sc-value">{typeof value === 'number' ? fmtNum(value) : value}</div>
+      {sub && <div className="sc-sub">{sub}</div>}
+      {to && <span className="sc-view" aria-hidden>{`${view} →`}</span>}
+    </>
+  );
+  if (to)
+    return (
+      <a className="statcard click" href={`#${to}`} data-to={to} aria-label={`${label}: ${typeof value === 'number' ? fmtNum(value) : value}. ${view}`}>
+        {body}
+      </a>
+    );
+  return (
+    <div className={`statcard${onClick ? ' click' : ''}`} onClick={onClick}>
+      {body}
+    </div>
+  );
+}
+
+/** The query part of the current route (#/cases?tab=…). */
+export const useQuery = () => new URLSearchParams(typeof location !== 'undefined' ? location.hash.split('?')[1] ?? '' : '');
+
+/** Underline tabs with count chips (HospEase Tabs). */
+export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: string; count?: number }[]; value: T; onChange: (v: T) => void }) {
+  return (
+    <div className="utabs" role="tablist">
+      {tabs.map((t) => (
+        <button key={t.id} role="tab" aria-selected={value === t.id} className={value === t.id ? 'on' : ''} onClick={() => onChange(t.id)}>
+          {t.label}
+          {t.count !== undefined && t.count > 0 && <span className="chip-n">{t.count}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** "Cases" card title with a count badge, like HospEase "Patients 12". */
+export function CountTitle({ title, n }: { title: string; n: number }) {
+  return (
+    <span className="count-title">
+      {title} <span className="count-badge">{n}</span>
+    </span>
+  );
+}
+
+/** Flags are badges, not statuses. */
+export function Flags({ i, at, safe }: { i: Incident; at: number; safe?: boolean }) {
+  const h = pendingHandoff(i);
+  const out: ReactNode[] = [];
+  if (isSos(i)) out.push(<span key="sos" className={`badge solid${i.status === 'pending' ? ' pulse' : ''}`}>SOS</span>);
+  if (safe) return <>{out}</>;
+  if (h) out.push(<span key="h" className="badge handoff">Handoff pending → {handoffTarget(h)}</span>);
+  if (i.escalationLevel >= 2 && isOpen(i)) out.push(<span key="e" className={`badge ${i.escalationLevel >= 4 ? 'bad' : 'warn'}`}>Escalated L{i.escalationLevel} · {levelLabel(i)}</span>);
+  if (isOverdue(i, at)) out.push(<span key="o" className="badge bad">Overdue</span>);
+  const people = distinctReporters(i);
+  if (people > 1) out.push(<span key="n" className="badge info">Reported by {people} people</span>);
+  else if (i.restricted && i.unverified && isOpen(i)) out.push(<span key="u" className="badge">Single report</span>);
+  if (i.backupRequested && isOpen(i)) out.push(<span key="b" className="badge bad">Backup requested</span>);
+  if (i.backupSent && isOpen(i)) out.push(<span key="bs" className="badge info">Backup: {i.backupSent}</span>);
+  return <>{out}</>;
 }
 
 export function IdBadge({ i }: { i: Incident }) {
@@ -97,11 +188,128 @@ export function IdBadge({ i }: { i: Incident }) {
   return null;
 }
 
-export const CHANNEL: Record<string, string> = { web: 'Web', sos: 'SOS', whatsapp: 'WhatsApp', sms: 'SMS', ussd: 'USSD', call_615: '615 call' };
+const STEP_KEYS = ['', 'verified', 'assigned', 'accepted', 'started', 'resolved', 'closed'] as const;
 
-export function Stat({ k, v, s, alert }: { k: string; v: ReactNode; s?: ReactNode; alert?: boolean }) {
+function stepTime(i: Incident, k: number): number | undefined {
+  switch (k) {
+    case 0:
+      return i.createdAt;
+    case 1:
+      return i.t.verified ?? (stepOf(i) >= 1 ? i.handoffs[0]?.at : undefined);
+    case 2:
+      return i.t.assigned;
+    case 3:
+      return i.t.acknowledged;
+    case 4:
+      return i.t.started;
+    case 5:
+      return i.t.resolved;
+    case 6:
+      return i.t.closed;
+  }
+}
+
+/** Plain-language who-did-it for a step. "safe" hides people and units on security cases. */
+function stepWho(i: Incident, k: number, safe: boolean, lang: Lang): string | undefined {
+  if (k === 0) return tr('step.via', lang, { ch: tr(`ch.${i.reports[0]?.channel ?? 'web'}` as Parameters<typeof tr>[0], lang) });
+  if (k === 1 && !i.t.verified) return tr('step.auto', lang);
+  if (safe) {
+    if (k === 1) return i.restricted ? tr('t.control', lang) : tr('step.checked', lang);
+    if (k >= 2 && k <= 5) return i.restricted ? tr('t.secunit', lang) : agency(i.agencyId)?.short;
+    return undefined;
+  }
+  if (k === 4) return i.by.started;
+  const key = STEP_KEYS[k];
+  return key ? i.by[key as keyof Incident['by']] : undefined;
+}
+
+export function Stepper({ i, compact, safe = false, lang = 'en' }: { i: Incident; compact?: boolean; safe?: boolean; lang?: Lang }) {
+  const cur = stepOf(i);
+  const final = i.status === 'closed' || i.status === 'referred';
+  const sub = i.status === 'in_progress' ? tr(i.t.onScene ? 'step.onscene' : i.t.enRoute ? 'step.enroute' : 'step.working', lang) : undefined;
+  const side = i.side && (i.status === i.side.kind || i.side.kind === 'reopened') ? i.side : undefined;
   return (
-    <div className={`stat${alert ? ' alert' : ''}`}>
+    <div className={`stepper-wrap${compact ? ' compact' : ''}`}>
+    <ol className={`stepper${compact ? ' compact' : ''}`} aria-label={tr('step.aria', lang)}>
+      {STATUS_ORDER.map((st, k) => {
+        const done = k < cur || (k === cur && (final || i.status === 'rejected'));
+        const now = k === cur && isOpen(i);
+        const t = k <= cur ? stepTime(i, k) : undefined;
+        const marker = side && side.step === k ? side : undefined;
+        const struck = i.status === 'rejected' && k > cur;
+        const label = k === 6 && i.status === 'referred' ? statusLabel({ status: 'referred' }, lang) : k === 4 && sub && now ? `${statusLabel({ status: st }, lang)} · ${sub}` : statusLabel({ status: st, verification: k === 6 ? i.verification : undefined }, lang);
+        return (
+          <li key={st} className={`step${done ? ' done' : ''}${now ? ' now' : ''}${struck ? ' struck' : ''}${k === 6 && i.status === 'referred' ? ' referred' : ''}`} style={{ ['--c' as string]: STATUS_COLOR[st] }} title={`${statusLabel({ status: st }, lang)}: ${tr(`mean.${st}` as Parameters<typeof tr>[0], lang)}`} tabIndex={0}>
+            <span className="dot" />
+            <span className="lbl">{label}</span>
+            {!compact && t && (
+              <span className="meta">
+                {hhmm(t)}
+                {stepWho(i, k, safe, lang) ? ` · ${stepWho(i, k, safe, lang)}` : ''}
+              </span>
+            )}
+            {marker && (
+              <span className={`side ${marker.kind}`} title={marker.reason}>
+                {statusLabel({ status: marker.kind }, lang)} · {hhmm(marker.at)}
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ol>
+    <StatusMeanings lang={lang} />
+    </div>
+  );
+}
+
+// ---------- clocks ----------
+
+/** The clock that matters right now for this case. */
+export function nextClock(i: Incident, at: number) {
+  if (!isOpen(i)) {
+    const total = (i.t.resolved ?? i.t.closed ?? at) - i.createdAt;
+    return { label: i.status === 'resolved' ? 'Done in' : 'Took', value: dur(total), tone: i.t.resolved && i.t.resolved > i.resolveDueAt ? 'bad' : 'good' };
+  }
+  const pick = (label: string, due: number, from: number) => {
+    const st = clockState(due, undefined, at, due - from);
+    return { label, value: at > due ? `${dur(at - due)} over` : `${dur(due - at)} left`, tone: st === 'breached' ? 'bad' : st === 'due_soon' ? 'warn' : 'good' };
+  };
+  if (!i.t.acknowledged) return pick(i.status === 'pending' ? 'Review' : 'Accept', i.ackDueAt, i.t.assigned ?? i.createdAt);
+  if (i.arriveDueAt && !i.t.onScene) return pick('Arrive', i.arriveDueAt, i.createdAt);
+  return pick('Resolve', i.resolveDueAt, i.createdAt);
+}
+
+export function Clock({ i, at }: { i: Incident; at: number }) {
+  const c = nextClock(i, at);
+  return (
+    <span className={`badge clock ${c.tone}`} title={`${c.label} target`}>
+      {c.label}: {c.value}
+    </span>
+  );
+}
+
+/** green / amber / red for one SLA clock. */
+export function ClockRow({ label, due, done, from, at }: { label: string; due?: number; done?: number; from: number; at: number }) {
+  if (!due) return null;
+  const st = clockState(due, done, at, due - from);
+  const tone = st === 'met' || st === 'ok' ? 'good' : st === 'due_soon' ? 'warn' : 'bad';
+  const text = done ? `${st === 'met' ? 'met' : 'missed'} · ${hhmm(done)}` : at > due ? `${dur(at - due)} overdue` : `${dur(due - at)} left · by ${fmtTimeWat(due)}`;
+  return (
+    <div className="clockrow">
+      <span className={`light ${tone}`} />
+      <span>{label}</span>
+      <span className="tnum muted">{text}</span>
+    </div>
+  );
+}
+
+export const CHANNEL: Record<string, string> = { web: 'App / web', sos: 'SOS', whatsapp: 'WhatsApp', sms: 'SMS', ussd: 'USSD', call_615: '615 call' };
+
+// ---------- layout primitives ----------
+
+export function Stat({ k, v, s, alert, onClick }: { k: string; v: ReactNode; s?: ReactNode; alert?: boolean; onClick?: () => void }) {
+  return (
+    <div className={`stat${alert ? ' alert' : ''}${onClick ? ' click' : ''}`} onClick={onClick}>
       <div className="k">{k}</div>
       <div className="v">{v}</div>
       {s && <div className="s">{s}</div>}
@@ -109,7 +317,7 @@ export function Stat({ k, v, s, alert }: { k: string; v: ReactNode; s?: ReactNod
   );
 }
 
-export function Bars({ rows, max, color }: { rows: { label: ReactNode; n: number; hint?: string }[]; max?: number; color?: string }) {
+export function Bars({ rows, max, color }: { rows: { label: ReactNode; n: number; hint?: string; color?: string }[]; max?: number; color?: string }) {
   const m = max ?? Math.max(1, ...rows.map((r) => r.n));
   if (!rows.length) return <div className="empty">Nothing yet</div>;
   return (
@@ -118,7 +326,7 @@ export function Bars({ rows, max, color }: { rows: { label: ReactNode; n: number
         <div className="bar" key={k} title={r.hint}>
           <span>{r.label}</span>
           <div className="track">
-            <div className="fill" style={{ width: `${(r.n / m) * 100}%`, background: color }} />
+            <div className="fill" style={{ width: `${(r.n / m) * 100}%`, background: r.color ?? color }} />
           </div>
           <span className="n">{r.n}</span>
         </div>
@@ -127,9 +335,9 @@ export function Bars({ rows, max, color }: { rows: { label: ReactNode; n: number
   );
 }
 
-export function Card({ title, right, children, pad = true }: { title?: ReactNode; right?: ReactNode; children: ReactNode; pad?: boolean }) {
+export function Card({ title, right, children, pad = true, className = '' }: { title?: ReactNode; right?: ReactNode; children: ReactNode; pad?: boolean; className?: string }) {
   return (
-    <section className="card">
+    <section className={`card ${className}`}>
       {title && (
         <div className="hd">
           <h2>{title}</h2>
@@ -142,67 +350,402 @@ export function Card({ title, right, children, pad = true }: { title?: ReactNode
   );
 }
 
-export function CaseTable({ rows, at, cols = ['ref', 'what', 'where', 'who', 'stage', 'clock'], empty = 'No cases' }: { rows: Incident[]; at: number; cols?: string[]; empty?: string }) {
-  if (!rows.length) return <div className="empty">{empty}</div>;
+export function Empty({ children }: { children: ReactNode }) {
+  return <div className="empty">{children}</div>;
+}
+
+/** HospEase-style work-list table: grey header, row dividers, View button, 10 per page. */
+export function CaseTable({ rows, at, empty = 'No cases here. New cases appear here and in your inbox.', pageSize = 10, showWho = true }: { rows: Incident[]; at: number; empty?: string; pageSize?: number; showWho?: boolean }) {
+  const [page, setPage] = useState(0);
+  const alerting = useAlertIds();
+  const pages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const p = Math.min(page, pages - 1);
+  const shown = rows.slice(p * pageSize, p * pageSize + pageSize);
+  if (!rows.length) return <Empty>{empty}</Empty>;
   return (
-    <div className="table-wrap">
-      <table className="table">
-        <thead>
-          <tr>
-            {cols.includes('ref') && <th>Case</th>}
-            {cols.includes('what') && <th>What</th>}
-            {cols.includes('where') && <th>Where</th>}
-            {cols.includes('who') && <th>Responder</th>}
-            {cols.includes('stage') && <th>Stage</th>}
-            {cols.includes('clock') && <th>Clock</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((i) => (
-            <tr key={i.id} className="click" onClick={() => go(`/case/${i.id}`)}>
-              {cols.includes('ref') && (
+    <div className="htable">
+      <div className="table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Ref</th>
+              <th>What</th>
+              <th>Where</th>
+              <th>Reported</th>
+              {showWho && <th>With</th>}
+              <th>Status</th>
+              <th>Priority</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((i) => (
+              <tr key={i.id} className={`click${alerting.has(i.id) ? ` row-alert${at - i.createdAt < ALERT_FLASH_MS ? ' row-flash' : ''}` : ''}`} onClick={() => go(`/case/${i.id}`)}>
+                <td className="mono">{i.ref}</td>
                 <td>
-                  <div className="mono">{i.ref}</div>
-                  <div className="tiny muted">{ago(i.createdAt, at)}</div>
-                </td>
-              )}
-              {cols.includes('what') && (
-                <td>
-                  <div className="row" style={{ gap: 6 }}>
-                    <Sev s={i.severity} />
-                    <b>{subLabel(i.category, i.subcategory)}</b>
-                    {i.reports.length > 1 && <span className="badge info">{i.reports.length} reports</span>}
-                  </div>
-                  <div className="small muted" style={{ marginTop: 3 }}>
-                    {i.sensitiveOnly ? 'Details restricted' : i.title}
+                  <div className="row nowrap" style={{ gap: 8 }}>
+                    <CatIcon c={i.category} size={15} />
+                    <span className="strong">{subLabel(i.category, i.subcategory)}</span>
+                    <TopFlag i={i} at={at} />
                   </div>
                 </td>
-              )}
-              {cols.includes('where') && (
                 <td>
                   {i.area}
                   <div className="tiny muted">{lgaOf(i.lgaId).name}</div>
                 </td>
-              )}
-              {cols.includes('who') && <td className="small">{agency(i.agencyId)?.short}</td>}
-              {cols.includes('stage') && (
-                <td>
-                  <div className="stack" style={{ gap: 4, justifyItems: 'start' }}>
-                    <Stage i={i} />
-                    <Level i={i} />
-                  </div>
+                <td className="muted nowrap">
+                  <Ago t={i.createdAt} at={at} />
                 </td>
-              )}
-              {cols.includes('clock') && (
+                {showWho && (
+                  <td className="small">
+                    <WithCell i={i} at={at} />
+                  </td>
+                )}
                 <td>
-                  <Clock i={i} at={at} />
+                  <StatusPill i={i} />
                 </td>
-              )}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                <td>
+                  <Priority s={i.severity} />
+                </td>
+                <td>
+                  <button
+                    className="link-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      go(`/case/${i.id}`);
+                    }}
+                  >
+                    View
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > pageSize && (
+        <div className="pager">
+          <span className="small muted">
+            Showing {p * pageSize + 1}–{Math.min(rows.length, (p + 1) * pageSize)} of {rows.length}
+          </span>
+          <div className="row" style={{ gap: 6 }}>
+            <button className="btn sm" disabled={p === 0} onClick={() => setPage(p - 1)}>
+              <Icon name="back" size={16} /> Previous
+            </button>
+            <span className="small">
+              Page {p + 1} of {pages}
+            </span>
+            <button className="btn sm" disabled={p >= pages - 1} onClick={() => setPage(p + 1)}>
+              Next <Icon name="forward" size={16} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+/** Cases currently ringing for the signed-in person (unopened SOS / Officer SOS / Critical). */
+export function useAlertIds() {
+  const s = useStore((x) => x);
+  const me = persona();
+  return useMemo(() => new Set(alertsFor(s, me).map((a) => a.id)), [s, me]);
+}
+
+/** "With" column: the holder, or "Police Bodija · ⏳ 8 min" while a pass waits for acceptance (§6). */
+export function WithCell({ i, at }: { i: Incident; at: number }) {
+  const c = isOpen(i) ? handoffClock(i, at) : undefined;
+  if (!c) return <>{holderLabel(i)}</>;
+  return (
+    <span className={`cd-cell cd-${c.tone}`} title={c.overdueText ?? `Waiting for ${c.target} to accept`}>
+      {c.target} · <span aria-hidden>⏳</span> {c.left > 0 ? `${Math.max(1, Math.ceil(c.left / MIN))} min` : c.short.toLowerCase()}
+    </span>
+  );
+}
+
+// ---------- toasts ----------
+
+type ToastT = { id: number; text: string; tone: 'good' | 'bad' | 'info'; action?: { label: string; href: string } };
+let toasts: ToastT[] = [];
+const toastListeners = new Set<() => void>();
+let toastId = 0;
+export function toast(text: string, tone: ToastT['tone'] = 'good', action?: ToastT['action']) {
+  const t = { id: ++toastId, text, tone, action };
+  toasts = [...toasts, t];
+  toastListeners.forEach((l) => l());
+  setTimeout(() => {
+    toasts = toasts.filter((x) => x.id !== t.id);
+    toastListeners.forEach((l) => l());
+  }, action ? 9000 : 4500);
+}
+/** Run an action; show the error as a toast, or the success message. Returns true on success. */
+export function run(err: string | undefined, ok?: string) {
+  if (err) {
+    toast(err, 'bad');
+    return false;
+  }
+  if (ok) toast(ok);
+  return true;
+}
+export function Toaster() {
+  const [, set] = useState(0);
+  useEffect(() => {
+    const l = () => set((x) => x + 1);
+    toastListeners.add(l);
+    return () => void toastListeners.delete(l);
+  }, []);
+  return (
+    <div className="toasts" role="status" aria-live="polite">
+      {toasts.map((t) => (
+        <div key={t.id} className={`toast ${t.tone}`}>
+          {t.text}
+          {t.action && (
+            <>
+              {' · '}
+              <a href={t.action.href} className="toast-act">
+                {t.action.label}
+              </a>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------- sheets & confirm ----------
+
+export const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+/** Keep Tab inside a modal. */
+export function trapTab(e: KeyboardEvent, root: HTMLElement | null) {
+  if (!root) return;
+  const els = [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((x) => !x.hasAttribute('hidden'));
+  if (!els.length) return;
+  const first = els[0];
+  const last = els[els.length - 1];
+  if (!root.contains(document.activeElement)) {
+    e.preventDefault();
+    first.focus();
+  } else if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
+export function Sheet({ title, onClose, children, wide }: { title: ReactNode; onClose: () => void; children: ReactNode; wide?: boolean }) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      else if (e.key === 'Tab') trapTab(e, box.current);
+    };
+    addEventListener('keydown', k);
+    return () => removeEventListener('keydown', k);
+  }, [onClose]);
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const first = box.current?.querySelector<HTMLElement>(FOCUSABLE);
+    first?.focus();
+    return () => opener?.focus?.();
+  }, []);
+  return (
+    <div className="scrim" onClick={onClose}>
+      <div ref={box} className={`sheet${wide ? ' wide' : ''}`} role="dialog" aria-modal aria-label={typeof title === 'string' ? title : undefined} onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-hd">
+          <h2>{title}</h2>
+          <button className="btn ghost sm" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
+        </div>
+        <div className="sheet-bd">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Two-step button for irreversible actions (Reject, Close). */
+export function ConfirmButton({ children, confirm, onConfirm, className = 'btn', disabled }: { children: ReactNode; confirm: string; onConfirm: () => void; className?: string; disabled?: boolean }) {
+  const [ask, setAsk] = useState(false);
+  if (!ask)
+    return (
+      <button className={className} disabled={disabled} onClick={() => setAsk(true)}>
+        {children}
+      </button>
+    );
+  return (
+    <div className="confirm">
+      <span className="small">{confirm}</span>
+      <button
+        className="btn danger sm"
+        onClick={() => {
+          setAsk(false);
+          onConfirm();
+        }}
+      >
+        Yes, confirm
+      </button>
+      <button className="btn sm" onClick={() => setAsk(false)}>
+        Cancel
+      </button>
+    </div>
+  );
+}
+
+export function Chips<T extends string>({ options, value, onChange }: { options: readonly T[] | T[]; value?: string; onChange: (v: T) => void }) {
+  return (
+    <div className="chips">
+      {options.map((o) => (
+        <button key={o} type="button" className={`chip${value === o ? ' on' : ''}`} onClick={() => onChange(o)}>
+          {o}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ---------- photos ----------
+
+/** A generated stand-in photo so the demo works without a real image file. */
+export function samplePhoto(label: string, tone = '#6b7a52') {
+  const c = document.createElement('canvas');
+  c.width = 480;
+  c.height = 320;
+  const g = c.getContext('2d')!;
+  const sky = g.createLinearGradient(0, 0, 0, 320);
+  sky.addColorStop(0, '#cfe0ea');
+  sky.addColorStop(1, '#e9e3d4');
+  g.fillStyle = sky;
+  g.fillRect(0, 0, 480, 320);
+  g.fillStyle = '#9c8f7a';
+  g.fillRect(0, 210, 480, 110);
+  g.fillStyle = '#b9ad98';
+  g.fillRect(40, 120, 120, 90);
+  g.fillRect(300, 100, 140, 110);
+  g.fillStyle = tone;
+  for (let k = 0; k < 9; k++) {
+    g.beginPath();
+    g.ellipse(150 + k * 22, 240 + (k % 3) * 8, 34, 16, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.fillStyle = 'rgba(0,0,0,0.55)';
+  g.fillRect(0, 286, 480, 34);
+  g.fillStyle = '#fff';
+  g.font = '600 16px system-ui, sans-serif';
+  g.fillText(`${label} · ${fmtDateTime(now())} WAT`, 12, 309);
+  return c.toDataURL('image/jpeg', 0.7);
+}
+
+export function PhotoInput({ value, onChange, label = 'Photo', sample = 'Sample photo', sampleTone, lang = 'en' }: { value?: string; onChange: (v?: string) => void; label?: string; sample?: string; sampleTone?: string; lang?: Lang }) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <div className="field">
+      <span>{label}</span>
+      <div className="row">
+        {value && <img className="thumb" src={value} alt={tr('r.photo.alt', lang)} />}
+        <button type="button" className="btn" onClick={() => ref.current?.click()}>
+          <Icon name="camera" /> {tr(value ? 'r.photo.change' : 'r.photo.take', lang)}
+        </button>
+        <button type="button" className="btn ghost" onClick={() => onChange(samplePhoto(sample, sampleTone))}>
+          {tr('r.samplePhoto', lang)}
+        </button>
+        {value && (
+          <button type="button" className="btn ghost sm" onClick={() => onChange(undefined)}>
+            {tr('r.photo.remove', lang)}
+          </button>
+        )}
+        <input
+          ref={ref}
+          hidden
+          aria-label={label}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={async (e) => {
+            const f = e.target.files?.[0];
+            onChange(f ? await readPhoto(f) : undefined);
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ---------- icons (lucide-react, the same set HospEase uses) ----------
+
+const ICONS: Record<string, LucideIcon> = {
+  security: Shield,
+  fire: Flame,
+  flooding: Waves,
+  roads: Construction,
+  waste: Trash2,
+  infrastructure: Zap,
+  other: CircleHelp,
+  bell: Bell,
+  camera: Camera,
+  mic: Mic,
+  pin: MapPin,
+  phone: PhoneCall,
+  list: ListChecks,
+  plus: Plus,
+  check: Check,
+  pass: ArrowRightLeft,
+  user: User,
+  overview: LayoutDashboard,
+  cases: ListChecks,
+  inbox: InboxIcon,
+  call: PhoneCall,
+  reports: ChartColumn,
+  officers: Users,
+  logout: LogOut,
+  search: Search,
+  menu: Menu,
+  x: X,
+  back: ChevronLeft,
+  forward: ChevronRight,
+  down: ChevronDown,
+  more: Ellipsis,
+  filter: ListFilter,
+  home: House,
+  routing: Route,
+  sla: Timer,
+  duty: CalendarClock,
+  audit: ScrollText,
+  sos: Siren,
+  clock: ClockIcon,
+  alert: TriangleAlert,
+  done: CircleCheck,
+  file: FileText,
+  doc: FileText,
+  chat: MessageCircle,
+  station: Building2,
+  send: SendHorizontal,
+  clip: Paperclip,
+  pinned: Pin,
+  urgent: Megaphone,
+  upload: Upload,
+  download: Download,
+  key: KeyRound,
+  speaker: Volume2,
+  mute: VolumeX,
+  locate: LocateFixed,
+  nav: Navigation,
+  expand: Maximize2,
+  layers: Layers,
+};
+
+export function Icon({ name, size = 18 }: { name: string; size?: number }) {
+  const C = ICONS[name] ?? CircleHelp;
+  return <C className="ico" size={size} strokeWidth={1.9} aria-hidden />;
+}
+
+export function CatIcon({ c, size = 22 }: { c: CategoryId; size?: number }) {
+  return (
+    <span className={`caticon c-${c}`} style={{ width: size + 10, height: size + 10 }}>
+      <Icon name={c} size={size} />
+    </span>
   );
 }
 
@@ -235,7 +778,7 @@ function hull(pts: [number, number][]) {
   return [...lower.slice(0, -1), ...upper.slice(0, -1)];
 }
 
-export function MapView({ points, metro: metroDefault = false, height = 380, labels = true }: { points: MapPoint[]; metro?: boolean; height?: number; labels?: boolean }) {
+export function MapView({ points, metro: metroDefault = false, height = 380, labels = true, toggle = true }: { points: MapPoint[]; metro?: boolean; height?: number; labels?: boolean; toggle?: boolean }) {
   const [metro, setMetro] = useState(metroDefault);
   const b = metro ? dep.metroBounds : dep.bounds;
   const W = 600;
@@ -252,19 +795,19 @@ export function MapView({ points, metro: metroDefault = false, height = 380, lab
   const scale = metro ? 1.25 : 1;
   return (
     <div className="stack" style={{ gap: 8 }}>
-      <div className="row between">
-        <div className="seg">
-          <button className={!metro ? 'on' : ''} onClick={() => setMetro(false)}>
-            State
-          </button>
-          <button className={metro ? 'on' : ''} onClick={() => setMetro(true)}>
-            Ibadan metro
-          </button>
+      {toggle && (
+        <div className="row between">
+          <div className="seg">
+            <button className={!metro ? 'on' : ''} onClick={() => setMetro(false)}>
+              State
+            </button>
+            <button className={metro ? 'on' : ''} onClick={() => setMetro(true)}>
+              Ibadan metro
+            </button>
+          </div>
+          <span className="tiny muted">{visible.length} shown · schematic map</span>
         </div>
-        <span className="tiny muted">
-          {visible.length} shown · schematic map
-        </span>
-      </div>
+      )}
       <svg className="map" viewBox={`0 0 ${W} ${H}`} style={{ maxHeight: height }} role="img" aria-label="Incident map">
         <polygon className="shape" points={shape.map(([lng, lat]) => `${x(lng)},${y(lat)}`).join(' ')} />
         {dep.lgas.map((l) => (
@@ -295,7 +838,7 @@ export function incidentPoints(rows: Incident[], at: number): MapPoint[] {
     color: SEV_COLOR[i.severity],
     r: 3.5 + Math.min(6, Math.sqrt(i.reports.length) * 1.4),
     title: `${i.ref} · ${subLabel(i.category, i.subcategory)} · ${i.area}${isOverdue(i, at) ? ' · OVERDUE' : ''}`,
-    pulse: i.status === 'triage' && i.severity === 'critical',
+    pulse: i.status === 'pending' && i.severity === 'critical',
     onClick: () => go(`/case/${i.id}`),
   }));
 }
