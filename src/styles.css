@@ -3626,6 +3626,9 @@ a.statcard:hover .sc-view { text-decoration: underline; }
 .map-main { position: relative; min-width: 0; }
 .map-view-btns { right: auto; left: 54px; }
 .livemap.base-dark .map-el { background: #1b1f24; }
+/* Dark and Light bases: CSS filters over the keyless OSM tiles. */
+.leaflet-tile-pane .tiles-dark { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.85) saturate(0.6); }
+.leaflet-tile-pane .tiles-light { filter: grayscale(0.85) brightness(1.06) contrast(0.92); }
 
 /* layer panel (top-right) */
 .layer-panel { position: absolute; top: 10px; right: 10px; z-index: 600; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }

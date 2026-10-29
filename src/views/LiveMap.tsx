@@ -88,7 +88,7 @@ const checkpointHtml = (kind: string, state: string) => `<span class="mk-cp k-${
 const hospitalHtml = `<span class="mk-hosp"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="1" width="22" height="22" rx="5" fill="#fff" stroke="#D92D20" stroke-width="2"/><path d="M12 6v12M6 12h12" stroke="#D92D20" stroke-width="3.2" stroke-linecap="round"/></svg></span>`;
 
 /**
- * Live map: Leaflet + OpenStreetMap / CARTO tiles, with a plain offline fallback.
+ * Live map: Leaflet + OpenStreetMap tiles, with a plain offline fallback.
  * Leaflet is loaded lazily in the browser, so the page (and server render) works without it.
  */
 export function LiveMap({ rows, context, height = 460, controls = true, focus, selfId, picker, page, panel, wall }: LiveMapProps) {
@@ -271,7 +271,7 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Base map: Standard (OSM), Dark or Light (CARTO). If no tile arrives within 4 s, fall back to positions only.
+  // Base map: Standard, Dark or Light (all OSM; Dark/Light are CSS filters). If no tile arrives within 4 s, fall back to positions only.
   const tileTimer = useRef(0);
   const setTiles = () => {
     const m = mapRef.current;
@@ -279,7 +279,7 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
     const b = BASES.find((x) => x.id === base) ?? BASES[0];
     if (m.tiles) m.map.removeLayer(m.tiles);
     let loaded = false;
-    const tiles = m.L.tileLayer(b.url, { maxZoom: 18, attribution: b.attribution, subdomains: 'abcd' });
+    const tiles = m.L.tileLayer(b.url, { maxZoom: 18, attribution: b.attribution, className: `tiles-${b.id}` });
     tiles.on('tileload', () => {
       loaded = true;
       setOffline(false);

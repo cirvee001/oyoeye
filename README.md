@@ -309,7 +309,7 @@ messages. Normal messages only raise the Chat unread count; urgent messages, bro
 
 ### Operational map (steps 29–32, PRD v2.8)
 
-29. **Operational map.** Duty lead → *Cases* → **Map**. It opens on the **Dark** base (CARTO; Standard and Light are in
+29. **Operational map.** Duty lead → *Cases* → **Map**. It opens on the **Dark** base (OpenStreetMap with a dark filter; Standard and Light are in
     **Layers**, top right). In Layers turn on **Patrol vehicles**, **Checkpoints** and **Patrol routes**. The
     **Resources** panel on the left says "Vehicles: … available · … patrolling · … responding · … on scene · 5 out of
     service" — click a part to filter the map. Type "Police Ibarapa" in its search and press Enter: 2 of its 3 vehicles
@@ -362,7 +362,7 @@ Backup requested, Handoff pending.
 | --- | --- |
 | Routing matrix (most specific rule wins, coverage-based targets) | AI triage (keyword rules; English, Yoruba, Pidgin) |
 | Handoffs with accept/decline, SLA clocks, escalation ladder | OTP, SMS, WhatsApp, push (written to an outbox) |
-| Duty roster: on-duty people first, then the next role up | GPS ("Simulate my location" in Demo controls); vehicle positions (from the demo clock, straight lines and approximate routes); map tiles from OpenStreetMap / CARTO |
+| Duty roster: on-duty people first, then the next role up | GPS ("Simulate my location" in Demo controls); vehicle positions (from the demo clock, straight lines and approximate routes); map tiles from OpenStreetMap |
 | Duplicate merging; "Reported by N people" counts distinct reporters | Voice notes, USSD, 615 telephony |
 | Evidence before resolve; citizen confirmation and reopen | Database (`localStorage`) |
 | Role-based access, sealed/anonymous identities, break-glass | |

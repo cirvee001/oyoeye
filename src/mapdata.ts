@@ -25,10 +25,13 @@ export const LAYERS: { id: Layer; label: string; group: 'Incidents' | 'Resources
   { id: 'hospitals', label: 'Hospitals', group: 'Places' },
   { id: 'lganames', label: 'LGA names', group: 'Places' },
 ];
+// All three bases use keyless OpenStreetMap tiles; Dark and Light are CSS filters on the tile layer
+// (CARTO basemaps now need an API key and served "API KEY REQUIRED" tiles).
+const OSM_TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 export const BASES: { id: BaseMap; label: string; url: string; attribution: string }[] = [
-  { id: 'osm', label: 'Standard', url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '© OpenStreetMap contributors' },
-  { id: 'dark', label: 'Dark', url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', attribution: '© OpenStreetMap contributors © CARTO' },
-  { id: 'light', label: 'Light', url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', attribution: '© OpenStreetMap contributors © CARTO' },
+  { id: 'osm', label: 'Standard', url: OSM_TILES, attribution: '© OpenStreetMap contributors' },
+  { id: 'dark', label: 'Dark', url: OSM_TILES, attribution: '© OpenStreetMap contributors' },
+  { id: 'light', label: 'Light', url: OSM_TILES, attribution: '© OpenStreetMap contributors' },
 ];
 
 /** Never plotted at their exact point for anyone except the restricted desk. */
