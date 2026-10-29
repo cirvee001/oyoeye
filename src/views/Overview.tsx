@@ -89,7 +89,7 @@ export function Overview() {
       </div>
       {(kind === 'coord' || kind === 'gov') && (
         <Card title="Security map" right={<span className="small muted">Live · simulated unit positions</span>}>
-          <LiveMap rows={scope.filter((i) => i.restricted || isOpen(i))} />
+          <LiveMap rows={scope.filter((i) => i.restricted || isOpen(i))} panel />
         </Card>
       )}
       {(kind === 'commander' || kind === 'agency') && <ConductCard agencyId={me.agencyId!} />}

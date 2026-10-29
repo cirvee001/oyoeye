@@ -1,20 +1,34 @@
 import { DAY, HOUR, isOpen, km } from './platform/engine';
-import type { Incident, Person } from './platform/types';
+import type { Checkpoint, Hospital, Incident, PatrolRoute, Person, Vehicle, VehicleStatus } from './platform/types';
+import { HOSPITALS, ROUTES, VEHICLE_STATUSES, VEHICLE_STATUS_COLOR, VEHICLE_STATUS_LABEL, breadcrumb, vehiclePosition } from './fleet';
 import { SIDE_STATUSES, STATUS_COLOR, STATUS_ORDER, STATUS_TONE, statusLabel } from './i18n';
 import { areaPoint } from './deployments/oyo';
 import { roleKind } from './roles';
-import { agency, controlRoom, dep, getState, holderLabel, isManagerOf, lgaOf, now, officerPosition, stationPoint, subLabel, type State } from './store';
+import { agency, checkpointStatus, controlRoom, dep, getState, holderLabel, isManagerOf, lgaOf, now, officerPosition, onDuty, person, readiness, stationPoint, subLabel, type State } from './store';
 
 // Pure map data, so the privacy rules can be checked without Leaflet or tiles (PRD v2.3 §2, §9).
 
-export type Layer = 'incidents' | 'hotspots' | 'coverage' | 'units';
+export type Layer = 'incidents' | 'hotspots' | 'sos' | 'stations' | 'vehicles' | 'units' | 'checkpoints' | 'routes' | 'coverage' | 'hospitals' | 'lganames';
+export type BaseMap = 'osm' | 'dark' | 'light';
 export type TimeWin = '24h' | '7d' | '30d';
 export const TIME_MS: Record<TimeWin, number> = { '24h': DAY, '7d': 7 * DAY, '30d': 30 * DAY };
-export const LAYERS: { id: Layer; label: string }[] = [
-  { id: 'incidents', label: 'Incidents' },
-  { id: 'hotspots', label: 'Hotspots' },
-  { id: 'coverage', label: 'Station coverage' },
-  { id: 'units', label: 'Units' },
+export const LAYERS: { id: Layer; label: string; group: 'Incidents' | 'Resources' | 'Places' }[] = [
+  { id: 'incidents', label: 'Cases', group: 'Incidents' },
+  { id: 'hotspots', label: 'Hotspots', group: 'Incidents' },
+  { id: 'sos', label: 'SOS only', group: 'Incidents' },
+  { id: 'stations', label: 'Stations', group: 'Resources' },
+  { id: 'vehicles', label: 'Patrol vehicles', group: 'Resources' },
+  { id: 'units', label: 'Officers on foot', group: 'Resources' },
+  { id: 'checkpoints', label: 'Checkpoints', group: 'Resources' },
+  { id: 'routes', label: 'Patrol routes', group: 'Resources' },
+  { id: 'coverage', label: 'Station coverage', group: 'Resources' },
+  { id: 'hospitals', label: 'Hospitals', group: 'Places' },
+  { id: 'lganames', label: 'LGA names', group: 'Places' },
+];
+export const BASES: { id: BaseMap; label: string; url: string; attribution: string }[] = [
+  { id: 'osm', label: 'Standard', url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '© OpenStreetMap contributors' },
+  { id: 'dark', label: 'Dark', url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', attribution: '© OpenStreetMap contributors © CARTO' },
+  { id: 'light', label: 'Light', url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', attribution: '© OpenStreetMap contributors © CARTO' },
 ];
 
 /** Never plotted at their exact point for anyone except the restricted desk. */
@@ -31,9 +45,13 @@ export function unitScope(me: Person): 'all' | 'own' | false {
 }
 
 export function defaultLayers(me: Person): Layer[] {
-  const units = isControlRoomStaff(me) || (me.role === 'supervisor' && ['police', 'corps'].includes(agency(me.agencyId)?.kind ?? ''));
-  return units ? ['incidents', 'units'] : ['incidents'];
+  if (isControlRoomStaff(me)) return ['incidents', 'units', 'stations'];
+  if (me.role === 'supervisor' && ['police', 'corps'].includes(agency(me.agencyId)?.kind ?? '')) return ['incidents', 'units', 'stations', 'vehicles'];
+  if (me.role === 'officer') return ['incidents', 'vehicles'];
+  return ['incidents', 'stations'];
 }
+/** Dark is the default for the operator, duty lead and coordinator (v2.8 §3.1). */
+export const defaultBase = (me: Person): BaseMap => (isControlRoomStaff(me) ? 'dark' : 'osm');
 
 export interface Pin {
   id: string;
@@ -137,7 +155,7 @@ export function unitMarkers(me: Person, at = now()) {
   const scope = unitScope(me);
   if (!scope) return [];
   return dep.people
-    .filter((p) => p.role === 'officer' && (p.staffStatus ?? 'active') === 'active' && (scope === 'all' || p.agencyId === me.agencyId))
+    .filter((p) => p.role === 'officer' && (p.staffStatus ?? 'active') === 'active' && (scope === 'all' || p.agencyId === me.agencyId) && !getState().vehicles.some((v) => v.status !== 'out_of_service' && v.crewIds.includes(p.id)))
     .map((p) => {
       const pos = officerPosition(p.id, at);
       const target = pos.mode === 'enroute' && pos.caseId ? getState().incidents.find((x) => x.id === pos.caseId) : undefined;
@@ -182,7 +200,7 @@ export function bearing(a: { lat: number; lng: number }, b: { lat: number; lng: 
 export interface LegendItem {
   label: string;
   /** Marker drawn in the legend: a shape, a station letter, or an officer mode. */
-  mark: Shape | 'letter' | 'dot' | 'arrow' | 'dotring' | 'count' | 'hotspot' | 'coverage';
+  mark: Shape | 'letter' | 'dot' | 'arrow' | 'dotring' | 'count' | 'hotspot' | 'coverage' | 'vehicle' | 'checkpoint' | 'checkpoint-out' | 'route' | 'hospital' | 'warn';
   color: string;
   letter?: string;
 }
@@ -206,7 +224,7 @@ export function legendFor(me: Person, layers: Layer[], opts: { focus?: boolean }
     else if (me.role !== 'sensitive') shapes.push({ label: 'Restricted (approximate location)', mark: 'square', color: '#98A2B3' });
     out.push({ title: 'Markers', items: shapes });
   }
-  if (on.has('coverage'))
+  if (on.has('coverage') || on.has('stations'))
     out.push({
       title: 'Stations',
       items: [
@@ -214,9 +232,16 @@ export function legendFor(me: Person, layers: Layer[], opts: { focus?: boolean }
         { label: 'Amotekun', mark: 'letter', letter: 'A', color: stationColor('corps') },
         { label: 'Fire service', mark: 'letter', letter: 'F', color: stationColor('emergency') },
         { label: 'Government agency', mark: 'letter', letter: 'G', color: stationColor('state') },
-        { label: 'Approximate coverage', mark: 'coverage', color: '#1D4ED8' },
+        { label: 'No vehicle available (amber) · no officer on duty (red)', mark: 'warn', color: '#D97706' },
+        ...(on.has('coverage') ? [{ label: 'Approximate coverage', mark: 'coverage' as const, color: '#1D4ED8' }] : []),
       ],
     });
+  if (on.has('vehicles') && vehicleScope(me) !== 'none')
+    out.push({ title: vehicleScope(me) === 'counts' ? 'Vehicles (counts per station)' : 'Patrol vehicles', items: VEHICLE_STATUSES.map((st) => ({ label: VEHICLE_STATUS_LABEL[st], mark: 'vehicle' as const, color: VEHICLE_STATUS_COLOR[st] })) });
+  if (on.has('checkpoints') && checkpointScope(me) !== 'none')
+    out.push({ title: 'Checkpoints', items: [{ label: 'Active', mark: 'checkpoint', color: '#B42318' }, { label: 'Scheduled (outline)', mark: 'checkpoint-out', color: '#B42318' }, { label: 'Joint Police + Amotekun', mark: 'checkpoint', color: '#7E22CE' }] });
+  if (on.has('routes') && routeScope(me) !== 'none') out.push({ title: 'Patrol routes', items: [{ label: 'Approximate route (dashed, station colour)', mark: 'route', color: '#1D4ED8' }] });
+  if (on.has('hospitals') && !isResident(me)) out.push({ title: 'Places', items: [{ label: 'Hospital', mark: 'hospital', color: '#D92D20' }] });
   if (on.has('units') && unitScope(me))
     out.push({
       title: 'Officers',
@@ -272,4 +297,196 @@ export function defaultView(me: Person, opts: { focus?: { lat: number; lng: numb
     return { bounds: boxAround(p.lat, p.lng, 2), label: me.community ?? lgaOf(me.lgaId).name };
   }
   return { bounds: STATE_BOUNDS(), label: 'All of Oyo' };
+}
+
+// ======================= v2.8: operational map — who sees what, enforced in the data =======================
+
+const isResident = (me: Person) => me.role === 'citizen' || me.role === 'focal' || me.id === 'guest';
+/** Vehicles: control room all · commander own (+ responding to their cases) · officer own (+ to their case) · Governor counts · nobody else. */
+export function vehicleScope(me: Person): 'all' | 'station' | 'own' | 'counts' | 'none' {
+  if (isControlRoomStaff(me) || me.role === 'command') return 'all';
+  if (me.role === 'executive') return 'counts';
+  if (me.role === 'officer' && ['police', 'corps', 'emergency'].includes(agency(me.agencyId)?.kind ?? '')) return 'own';
+  if (me.agencyId && isManagerOf(me, me.agencyId) && ['police', 'corps', 'emergency'].includes(agency(me.agencyId)?.kind ?? '')) return 'station';
+  return 'none';
+}
+/** Checkpoints: control all · commander own + joint · officer own station · Governor counts per LGA · never residents or the chairman. */
+export function checkpointScope(me: Person): 'all' | 'station' | 'own' | 'counts' | 'none' {
+  const s = vehicleScope(me);
+  return s;
+}
+export function routeScope(me: Person): 'all' | 'own' | 'none' {
+  const s = vehicleScope(me);
+  return s === 'all' ? 'all' : s === 'station' || s === 'own' ? 'own' : 'none';
+}
+
+export interface VehicleView {
+  id: string;
+  callSign: string;
+  stationId: string;
+  station: string;
+  kind: Vehicle['kind'];
+  status: VehicleStatus;
+  statusReason?: string;
+  lat: number;
+  lng: number;
+  heading: number;
+  etaMin?: number;
+  caseId?: string;
+  caseRef?: string;
+  routeId?: string;
+  route?: string;
+  crew: { id: string; name: string; rank?: string }[];
+  color: string;
+}
+export interface StationView {
+  id: string;
+  name: string;
+  short: string;
+  kind: string;
+  letter: string;
+  color: string;
+  lat: number;
+  lng: number;
+  readiness: number;
+  commander?: string;
+  onDuty: number;
+  officers: number;
+  vehicles?: { total: number; available: number; chips: { callSign: string; status: VehicleStatus }[] };
+  openCases: number;
+  /** amber: no vehicle available · red: no officer on duty */
+  warning?: 'amber' | 'red';
+  live: boolean;
+}
+export interface CheckpointView extends Checkpoint {
+  station: string;
+  staff: { id: string; name: string; rank?: string }[];
+  casesNearby: number;
+  state: Checkpoint['status'];
+}
+
+const VEHICLE_KINDS = ['police', 'corps', 'emergency'];
+/** Every resource the map may draw for this person — filtered here, so the browser never receives what the role can't see. */
+export function mapResources(me: Person, s: State, at = now()) {
+  const vs = vehicleScope(me);
+  const kind = roleKind(me);
+  const cases = s.incidents;
+  const caseOf = (id?: string) => (id ? cases.find((i) => i.id === id) : undefined);
+  const view = (v: Vehicle): VehicleView => {
+    const p = vehiclePosition(v, at, cases);
+    const c = caseOf(v.caseId);
+    return { id: v.id, callSign: v.callSign, stationId: v.stationId, station: agency(v.stationId)?.short ?? v.stationId, kind: v.kind, status: v.status, statusReason: v.statusReason, lat: p.lat, lng: p.lng, heading: p.heading, etaMin: v.status === 'responding' ? p.etaMin : undefined, caseId: v.caseId, caseRef: c?.ref, routeId: v.routeId, route: ROUTES.find((r) => r.id === v.routeId)?.name, crew: v.crewIds.map((id) => ({ id, name: person(id)?.name ?? id, rank: person(id)?.rank })), color: VEHICLE_STATUS_COLOR[v.status] };
+  };
+  const visibleVehicle = (v: Vehicle) => {
+    if (vs === 'all') return true;
+    if (vs === 'station') return v.stationId === me.agencyId || (!!v.caseId && caseOf(v.caseId)?.agencyId === me.agencyId);
+    if (vs === 'own') return v.crewIds.includes(me.id) || (!!v.caseId && caseOf(v.caseId)?.officerId === me.id);
+    return false;
+  };
+  const vehicles = vs === 'counts' || vs === 'none' ? [] : s.vehicles.filter(visibleVehicle).map(view);
+  const vehicleCounts =
+    vs === 'counts'
+      ? [...new Set(s.vehicles.map((v) => v.stationId))].map((sid) => {
+          const xs = s.vehicles.filter((v) => v.stationId === sid);
+          return { stationId: sid, station: agency(sid)?.short ?? sid, total: xs.length, available: xs.filter((v) => v.status === 'available' || v.status === 'patrolling').length, out: xs.filter((v) => v.status === 'out_of_service').length };
+        })
+      : undefined;
+  const near = (cp: Checkpoint) => cases.filter((i) => i.createdAt > at - 7 * DAY && km(i.lat, i.lng, cp.lat, cp.lng) <= 1).length;
+  const cpVisible = (cp: Checkpoint) => {
+    if (vs === 'all') return true;
+    if (vs === 'station') return cp.stationId === me.agencyId || cp.kind === 'joint';
+    if (vs === 'own') return cp.stationId === me.agencyId;
+    return false;
+  };
+  const live = s.checkpoints.map((cp) => ({ cp, st: checkpointStatus(cp, at) })).filter((x) => x.st !== 'closed' || vs === 'all' || vs === 'station');
+  const checkpoints: CheckpointView[] =
+    vs === 'counts' || vs === 'none'
+      ? []
+      : live
+          .filter((x) => cpVisible(x.cp))
+          .map(({ cp, st }) => ({ ...cp, state: st, station: agency(cp.stationId)?.short ?? cp.stationId, staff: cp.staffIds.map((id) => ({ id, name: person(id)?.name ?? id, rank: person(id)?.rank })), casesNearby: near(cp) }));
+  const checkpointCounts =
+    vs === 'counts'
+      ? [...new Set(live.filter((x) => x.st === 'active').map((x) => nearestLgaId(x.cp.lat, x.cp.lng)))].map((lgaId) => ({ lgaId, lga: lgaOf(lgaId).name, n: live.filter((x) => x.st === 'active' && nearestLgaId(x.cp.lat, x.cp.lng) === lgaId).length }))
+      : undefined;
+  const rs = routeScope(me);
+  const routes: PatrolRoute[] = rs === 'all' ? ROUTES : rs === 'own' ? ROUTES.filter((r) => r.stationId === me.agencyId) : [];
+  // Stations: everyone on staff; the chairman only their own LGA; residents none.
+  const stationList = isResident(me)
+    ? []
+    : dep.agencies.filter((a) => !['sensitive_desk', 'lga_council', 'control_room'].includes(a.kind) && (kind !== 'chair' || a.lgaIds.includes(me.lgaId ?? '')));
+  const showVehicleNumbers = vs !== 'none';
+  const stations: StationView[] = stationList.map((a) => {
+    const staff = dep.people.filter((p) => p.agencyId === a.id && p.role === 'officer' && (p.staffStatus ?? 'active') === 'active');
+    const onD = staff.filter((p) => onDuty(p.id)).length;
+    const vx = s.vehicles.filter((v) => v.stationId === a.id);
+    const avail = vx.filter((v) => v.status === 'available' || v.status === 'patrolling').length;
+    const hasFleet = VEHICLE_KINDS.includes(a.kind) && vx.length > 0;
+    return {
+      id: a.id,
+      name: a.name,
+      short: a.short,
+      kind: a.kind,
+      letter: stationLetter(a.kind),
+      color: stationColor(a.kind),
+      ...stationPoint(a.id),
+      readiness: readiness(a.id).score,
+      commander: person(a.commanderId)?.name,
+      onDuty: onD,
+      officers: staff.length,
+      vehicles: showVehicleNumbers && hasFleet ? { total: vx.length, available: avail, chips: vs === 'counts' ? [] : vx.map((v) => ({ callSign: v.callSign, status: v.status })) } : undefined,
+      openCases: cases.filter((i) => i.agencyId === a.id && isOpen(i)).length,
+      warning: staff.length && !onD ? 'red' : showVehicleNumbers && hasFleet && !avail ? 'amber' : undefined,
+      live: (a.status ?? 'live') === 'live',
+    };
+  });
+  const hospitals: Hospital[] = isResident(me) ? [] : HOSPITALS;
+  return { vehicles, vehicleCounts, checkpoints, checkpointCounts, routes, stations, hospitals };
+}
+const nearestLgaId = (lat: number, lng: number) => dep.lgas.slice().sort((a, b) => km(a.lat, a.lng, lat, lng) - km(b.lat, b.lng, lat, lng))[0].id;
+
+/** "Vehicles: 14 available · 6 patrolling · …" for the resources panel. */
+export function vehicleSummary(vs: { status: VehicleStatus }[]) {
+  return VEHICLE_STATUSES.map((st) => ({ status: st, label: VEHICLE_STATUS_LABEL[st], n: vs.filter((v) => v.status === st).length }));
+}
+
+/** Grid clustering for incident pins when zoomed out: one bubble per cell, coloured by the worst priority inside. */
+export function clusterPins<T extends { lat: number; lng: number; r: number; caseId: string }>(pins: T[], zoom: number) {
+  if (zoom >= 11) return { singles: pins, clusters: [] as { id: string; lat: number; lng: number; n: number; worst: number; ids: string[] }[] };
+  const cell = zoom <= 7 ? 0.35 : zoom <= 8 ? 0.18 : zoom <= 9 ? 0.09 : 0.045;
+  const by = new Map<string, T[]>();
+  for (const p of pins) {
+    const k = `${Math.floor(p.lat / cell)}|${Math.floor(p.lng / cell)}`;
+    by.set(k, [...(by.get(k) ?? []), p]);
+  }
+  const singles: T[] = [];
+  const clusters: { id: string; lat: number; lng: number; n: number; worst: number; ids: string[] }[] = [];
+  for (const [k, xs] of by) {
+    if (xs.length === 1) singles.push(xs[0]);
+    else clusters.push({ id: `k-${k}`, lat: xs.reduce((a, p) => a + p.lat, 0) / xs.length, lng: xs.reduce((a, p) => a + p.lng, 0) / xs.length, n: xs.length, worst: Math.max(...xs.map((p) => p.r)), ids: xs.map((p) => p.caseId) });
+  }
+  return { singles, clusters };
+}
+export const CLUSTER_COLOR = (r: number) => (r >= 9 ? '#D92D20' : r >= 7 ? '#DC6803' : r >= 6 ? '#1D4ED8' : '#667085');
+
+/** Breadcrumb for a visible vehicle (only computed when it is selected). */
+export function vehicleTrail(me: Person, s: State, vehicleId: string, at = now()) {
+  const vv = mapResources(me, s, at).vehicles.find((v) => v.id === vehicleId);
+  const v = s.vehicles.find((x) => x.id === vehicleId);
+  return vv && v ? breadcrumb(v, at, s.incidents) : [];
+}
+
+/** The latest key events for the wall-view ticker ("2:14 pm · SOS · Agbowo · Pending review"). */
+export function tickerEvents(s: State, at = now(), n = 5) {
+  const KEY = ['Report received', 'Verified', 'Passed', 'Passed back', 'Handoff accepted', 'Escalated', 'Officer SOS raised', 'Missed check-in — Officer SOS', 'On scene', 'Marked resolved', 'Closed', 'Vehicle responding', 'Checkpoint set up', 'Vehicle out of service'];
+  return s.audit
+    .filter((e) => KEY.includes(e.action) && e.at <= at)
+    .slice(-60)
+    .reverse()
+    .map((e) => {
+      const i = e.incidentId ? s.incidents.find((x) => x.id === e.incidentId) : undefined;
+      const what = i ? (i.officerSos ? 'Officer SOS' : i.reports[0]?.channel === 'sos' ? 'SOS' : subLabel(i.category, i.subcategory)) : e.action;
+      return { seq: e.seq, at: e.at, text: i ? `${what} · ${i.area} · ${e.action === 'Report received' ? statusLabel(i) : e.action}` : `${e.action} · ${e.detail}` };
+    })
+    .slice(0, n);
 }

@@ -230,7 +230,7 @@ export function App() {
   else if (h2 === 'track') page = <Track initial={id2} />;
   else if (h2 === 'admin')
     page =
-      kind !== 'admin' ? (
+      kind !== 'admin' && !(kind === 'coord' && id2 === 'station') ? (
         <NoAccess />
       ) : id2 === 'stations' ? (
         <Stations />

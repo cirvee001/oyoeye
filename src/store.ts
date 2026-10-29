@@ -54,14 +54,19 @@ import type {
   Severity,
   Shift,
   SlaTable,
+  Vehicle,
+  Checkpoint,
+  CheckpointKind,
+  OutOfServiceReason,
 } from './platform/types';
 
 import { msg, msgText, type Lang, type Msg } from './strings';
+import { HOSPITALS, ROUTES, canDispatch, nearestVehicles, seedCheckpoints, seedVehicles, vehiclePosition } from './fleet';
 import { PHONE_HINT, fmtTimeWat, lagosIsoDate, lagosYymmdd, normalisePhone, validPhone } from './format';
 
 export const dep = OYO;
 // v2 changes the status model; old v1 state is ignored and the demo reseeds.
-const KEY = 'oyoeye:v2.5'; // v2.2 adds stations, staff onboarding and chat to the saved state
+const KEY = 'oyoeye:v2.8'; // v2.2 adds stations, staff onboarding and chat to the saved state
 
 export interface Unseal {
   incidentId: string;
@@ -106,7 +111,7 @@ export interface State {
   unsealReviews: Record<number, { verdict: 'reviewed' | 'concern'; by: string; at: number; note?: string }>;
   noticeRules: { enabled: Record<string, boolean>; kidnapApproval: boolean };
   loneCheckMins: number;
-  mapPrefs: Record<string, { layers: string[]; time: '24h' | '7d' | '30d' }>;
+  mapPrefs: Record<string, { layers: string[]; time: '24h' | '7d' | '30d'; base?: 'osm' | 'dark' | 'light' }>;
   /** v2.4: current OyoEye Rule Book version. */
   rulebookVersion: number;
   // v2.5
@@ -120,6 +125,9 @@ export interface State {
   alertMute: Record<string, number>;
   /** "personId|page" → last map view. */
   mapViews: Record<string, { lat: number; lng: number; zoom: number }>;
+  // v2.8 operational map
+  vehicles: Vehicle[];
+  checkpoints: Checkpoint[];
 }
 
 let state: State;
@@ -144,7 +152,7 @@ export function useStore<T>(sel: (s: State) => T): T {
 
 let saveTimer: number | undefined;
 function commit() {
-  state = { ...state, incidents: [...state.incidents], audit: [...state.audit], outbox: [...state.outbox], inbox: [...state.inbox], chat: [...state.chat], transfers: [...state.transfers], feedback: [...state.feedback], complaints: [...state.complaints] };
+  state = { ...state, incidents: [...state.incidents], audit: [...state.audit], outbox: [...state.outbox], inbox: [...state.inbox], chat: [...state.chat], transfers: [...state.transfers], feedback: [...state.feedback], complaints: [...state.complaints], vehicles: [...state.vehicles], checkpoints: [...state.checkpoints] };
   listeners.forEach((l) => l());
   clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => {
@@ -183,7 +191,7 @@ export const holderLabel = (i: Incident) => (i.officerId ? `${person(i.officerId
 /** Can this person accept or decline the handoff? */
 export function canDecide(me: Person, h: Handoff) {
   if (h.status !== 'pending') return false;
-  if (h.kind === 'officer') return me.id === h.toPersonId;
+  if (h.kind === 'officer') return me.id === h.toPersonId || (!!h.vehicleId && isManagerOf(me, h.toAgencyId));
   if (h.kind === 'handback') return me.id === h.toPersonId || isManagerOf(me, h.toAgencyId);
   if (me.agencyId !== h.toAgencyId) return false;
   const kind = agency(h.toAgencyId)?.kind;
@@ -302,6 +310,8 @@ export interface ReportInput {
   lang?: Lang;
   /** v2.5: SOS sent before a location arrived. */
   locationUnknown?: boolean;
+  /** Seeding only: scripted demo cases are never merged into background history. */
+  noMerge?: boolean;
 }
 
 function jitter(seed: string, spread: number) {
@@ -377,7 +387,7 @@ function submitAt(at: number, input: ReportInput) {
     (identity === 'standard' ? (input.reporter?.personId ? person(input.reporter.personId) : undefined) ?? { id: 'reporter', name: input.reporter?.name || 'Reporter' } : { id: 'protected', name: identity === 'anonymous' ? 'Anonymous reporter' : 'Protected reporter' });
 
   // SOS is never merged away: each one is a person asking for help. Operators can merge by hand.
-  const dup = sub?.sensitiveOnly || input.sos ? undefined : findDuplicate(state.incidents, { category, subcategory, lat, lng, at });
+  const dup = sub?.sensitiveOnly || input.sos || input.noMerge ? undefined : findDuplicate(state.incidents, { category, subcategory, lat, lng, at });
   if (dup) {
     const before = distinctReporters(dup);
     dup.reports.push(report);
@@ -479,7 +489,7 @@ function submitAt(at: number, input: ReportInput) {
 
 // ---------- handoffs ----------
 
-function createHandoff(i: Incident, at: number, from: Person | typeof SYSTEM, to: { agencyId: string; personId?: string; kind?: HandoffKind }, reason: string, note?: string) {
+function createHandoff(i: Incident, at: number, from: Person | typeof SYSTEM, to: { agencyId: string; personId?: string; kind?: HandoffKind; vehicleId?: string }, reason: string, note?: string) {
   const toAgency = agency(to.agencyId);
   const kind: HandoffKind =
     to.kind ?? (to.personId && person(to.personId)?.role === 'officer' ? 'officer' : toAgency?.kind === 'control_room' ? 'control' : toAgency?.kind === 'sensitive_desk' ? 'desk' : 'unit');
@@ -505,6 +515,7 @@ function createHandoff(i: Incident, at: number, from: Person | typeof SYSTEM, to
     note,
     status: 'pending',
     prev,
+    vehicleId: to.vehicleId,
   };
   i.handoffs.push(h);
   const fromLabel = from === SYSTEM ? 'OyoEye routing' : `${from.name}${(from as Person).agencyId ? ` (${agency((from as Person).agencyId)?.short})` : ''}`;
@@ -542,6 +553,7 @@ function acceptAt(i: Incident, at: number, me: Person) {
   if (h.kind === 'handback') i.officerId = undefined;
   if (h.kind === 'officer') i.officerId = h.toPersonId;
   if (h.kind === 'officer' && me.loneDuty && !i.lone) startLone(at, i, me.id);
+  if (h.vehicleId) vehicleRespond(at, h.vehicleId, i, me);
   i.status = agency(h.toAgencyId)?.kind === 'control_room' ? (i.t.verified ? 'verified' : 'pending') : 'accepted';
   audit(at, me, 'Handoff accepted', `${me.name} accepted${h.kind === 'unit' ? ` for ${agency(h.toAgencyId)?.short}` : ''}`, i.id);
   if (h.fromId !== SYSTEM.id) notify(at, [h.fromId], 'accepted', `${me.name} accepted ${i.ref} (${subLabel(i.category, i.subcategory)}).`, i);
@@ -680,7 +692,7 @@ export const actions = {
     }),
 
   /** Operator: Verify & pass to unit (or agency / restricted desk) in one step. */
-  verifyAndPass: (id: string, v: { category?: CategoryId; subcategory?: string; severity?: Severity; toAgencyId: string; reason: string; note?: string }) =>
+  verifyAndPass: (id: string, v: { category?: CategoryId; subcategory?: string; severity?: Severity; toAgencyId: string; reason: string; note?: string; vehicleId?: string }) =>
     act(id, (i, at, me) => {
       const desk = me.role === 'sensitive' && i.sensitiveOnly;
       if (!isControl(me) && !desk) return 'Only the control room can verify and pass reports';
@@ -693,13 +705,15 @@ export const actions = {
       if (!to) return 'Choose who to pass it to';
       if (holdArmed(i, at, me, to, v.reason, v.note)) return;
       const civic = !['police', 'corps', 'sensitive_desk', 'control_room'].includes(to.kind);
-      const officer = civic ? pickOfficer(dep, state.incidents, to.id, onDuty) : undefined;
-      createHandoff(i, at, me, { agencyId: to.id, personId: officer?.id }, v.reason, v.note);
+      const veh = v.vehicleId ? state.vehicles.find((x) => x.id === v.vehicleId) : undefined;
+      if (veh && (!canDispatch(veh) || veh.stationId !== to.id)) return `${veh.callSign} can't be sent (${veh.status === 'out_of_service' ? `out of service — ${veh.statusReason}` : 'busy'})`;
+      const officer = veh ? person(veh.crewIds[0]) : civic ? pickOfficer(dep, state.incidents, to.id, onDuty) : undefined;
+      createHandoff(i, at, me, { agencyId: to.id, personId: officer?.id, vehicleId: veh?.id }, veh ? `${v.reason} · nearest vehicle ${veh.callSign}` : v.reason, v.note);
       notifyReporters(i, at, i.restricted ? msg('m.checked.sec') : msg('m.checked', { unit: to.short }));
     }),
 
   /** Pass case: the rules depend on who you are (PRD 3.3). */
-  passCase: (id: string, v: { toAgencyId: string; toPersonId?: string; reason: string; note?: string }) =>
+  passCase: (id: string, v: { toAgencyId: string; toPersonId?: string; reason: string; note?: string; vehicleId?: string }) =>
     act(id, (i, at, me) => {
       if (!isOpen(i)) return 'This case is closed';
       if (!v.reason.trim()) return 'Choose or write a reason';
@@ -719,7 +733,9 @@ export const actions = {
       if (isControl(me) && holdArmed(i, at, me, to, v.reason, v.note)) return;
       // Assigning an officer from "Assigned to us" accepts for the unit first.
       if (h && canDecide(me, h) && h.toAgencyId === me.agencyId) acceptAt(i, at, me);
-      createHandoff(i, at, me, { agencyId: v.toAgencyId, personId: v.toPersonId }, v.reason, v.note);
+      const veh = v.vehicleId ? state.vehicles.find((x) => x.id === v.vehicleId) : undefined;
+      if (veh && (!canDispatch(veh) || veh.stationId !== v.toAgencyId)) return `${veh.callSign} can't be sent (${veh.status === 'out_of_service' ? `out of service — ${veh.statusReason}` : 'busy'})`;
+      createHandoff(i, at, me, { agencyId: v.toAgencyId, personId: v.toPersonId ?? (veh ? veh.crewIds[0] : undefined), vehicleId: veh?.id }, veh ? `${v.reason} · nearest vehicle ${veh.callSign}` : v.reason, v.note);
     }),
 
   /** Field officer: hand the case back to their own commander, with a reason. */
@@ -883,6 +899,10 @@ export const actions = {
       i.status = 'in_progress';
       i.t.started = at;
       if (emergency) i.t.enRoute = at;
+      if (emergency) {
+        const v = crewVehicle(me.id);
+        if (v && v.caseId !== i.id) vehicleRespond(at, v.id, i, me);
+      }
       i.t.acknowledged = i.t.acknowledged ?? at;
       i.by.started = me.name;
       audit(at, me, emergency ? 'En route' : 'Work started', '', i.id);
@@ -897,6 +917,11 @@ export const actions = {
       if (me.loneDuty && !i.lone) startLone(at, i, me.id);
       if (i.lone && !i.lone.nextDue) i.lone = { ...i.lone, nextDue: at + state.loneCheckMins * MIN };
       audit(at, me, 'On scene', `Location confirmed near ${i.area}`, i.id);
+      const veh = crewVehicle(me.id);
+      if (veh && (veh.caseId === i.id || veh.status === 'responding')) {
+        veh.status = 'onscene';
+        veh.caseId = i.id;
+      }
       notifyReporters(i, at, msg('m.arrived'));
     }),
 
@@ -945,6 +970,7 @@ export const actions = {
       i.by.resolved = me.name;
       i.outcome = v.outcome;
       i.status = 'resolved';
+      releaseVehicles(i.id);
       audit(at, me, 'Marked resolved', `${v.outcome ? `${v.outcome}. ` : ''}${v.note}`, i.id);
       if (c.citizenVerification) {
         notifyReporters(i, at, v.note ? msg('m.fixed.note', { unit: agency(i.agencyId)?.short ?? '', note: v.note }) : msg('m.fixed', { unit: agency(i.agencyId)?.short ?? '' }));
@@ -1372,6 +1398,7 @@ export const onboarding = {
     p.postings = [...(p.postings ?? []).map((x) => (x.stationId === from.id && !x.to ? { ...x, to: at } : x)), { stationId: to.id, from: at }];
     p.agencyId = to.id;
     p.title = p.role === 'officer' ? `Officer, ${to.short}` : p.title;
+    moveCrew(at, me, p, to.id);
     audit(at, me, 'Transfer accepted', `${p.name}: ${from.short} → ${to.short}. Posting history updated; chat membership moved.`);
     systemPost(from.id, `${p.name} was transferred out to ${to.short}.`, at);
     systemPost(to.id, `${p.name} joined ${to.short} (transferred from ${from.short}).`, at);
@@ -2080,7 +2107,19 @@ export const complainantUnsealed = (id: string) => state.unseals.some((u) => u.i
 
 const SECURITY_RESPONDERS = ['police', 'corps'];
 /** Nearest live security stations to a point, by their closest on-duty officer (or the station itself). */
-export function nearestUnits(lat: number, lng: number, n = 3, at = now(), excludeId?: string) {
+export function nearestUnits(lat: number, lng: number, n = 3, at = now(), excludeId?: string): { agencyId: string; km: number; vehicleId?: string }[] {
+  // v2.8: vehicles first (never out of service, never the one the officer in distress is in)
+  const pool = state.vehicles.filter((v) => !excludeId || !v.crewIds.includes(excludeId));
+  const nv = nearestVehicles(pool, lat, lng, at, state.incidents, 40, (sid) => { const a = agency(sid); return !!a && isLive(a) && SECURITY_RESPONDERS.includes(a.kind); }).top;
+  const out: { agencyId: string; km: number; vehicleId?: string }[] = [];
+  for (const x of nv) if (!out.some((o) => o.agencyId === x.v.stationId)) out.push({ agencyId: x.v.stationId, km: x.km, vehicleId: x.v.id });
+  if (out.length >= n) return out.slice(0, n);
+  const foot = nearestUnitsOnFoot(lat, lng, n + out.length, at, excludeId).filter((u) => !out.some((o) => o.agencyId === u.agencyId));
+  return [...out, ...foot].sort((a, b) => a.km - b.km).slice(0, n);
+}
+
+/** v2.3: units by their nearest officer on foot (or the station itself). */
+export function nearestUnitsOnFoot(lat: number, lng: number, n = 3, at = now(), excludeId?: string) {
   return dep.agencies
     .filter((a) => SECURITY_RESPONDERS.includes(a.kind) && isLive(a))
     .map((a) => {
@@ -2132,10 +2171,11 @@ function raiseOfficerSos(at: number, officer: Person, kind: 'distress' | 'missed
   state.incidents.unshift(i);
   audit(at, kind === 'missed' ? SYSTEM : officer, kind === 'missed' ? 'Missed check-in — Officer SOS' : 'Officer SOS raised', `${officer.name}${silent ? ' (silent)' : ''} near ${area}, ${lga.name}${linked ? ` · linked to ${linked.ref}` : ''}. This is an alert, not an allegation: units alerted at once.`, i.id);
   const near = nearestUnits(pos.lat, pos.lng, 3, at, officer.id);
-  i.officerSos!.responses = near.map((u) => ({ agencyId: u.agencyId, km: Math.round(u.km * 10) / 10, status: 'asked' }));
+  i.officerSos!.responses = near.map((u) => ({ agencyId: u.agencyId, km: Math.round(u.km * 10) / 10, status: 'asked', vehicleId: u.vehicleId }));
   for (const u of near) {
     const who = agencyManagers(dep, u.agencyId, onDuty).map((p) => p.id);
-    const msg = `OFFICER NEEDS HELP — ${officer.name}, ${area}, ${u.km.toFixed(1)} km from you. GO?`;
+    const call = u.vehicleId ? state.vehicles.find((v) => v.id === u.vehicleId)?.callSign : undefined;
+    const msg = `OFFICER NEEDS HELP — ${officer.name}, ${area}, ${u.km.toFixed(1)} km from ${call ? `your vehicle ${call}` : 'you'}. GO?`;
     notify(at, who, 'sos', msg, i, undefined, undefined, undefined, u.agencyId);
     for (const id of who) {
       send(at, person(id), 'sms', `OYOEYE ${msg}`, i.id);
@@ -2174,6 +2214,10 @@ export const safety = {
     if (!going && !reason.trim()) return 'Say why you cannot go';
     const at = now();
     r.status = going ? 'going' : 'cant';
+    if (going && r.vehicleId) {
+      const veh = state.vehicles.find((v) => v.id === r.vehicleId);
+      if (veh && canDispatch(veh)) vehicleRespond(now(), veh.id, i, me);
+    }
     r.reason = reason || undefined;
     r.at = at;
     r.by = me.name;
@@ -2691,6 +2735,145 @@ export function resetMapView(page: string) {
   commit();
 }
 
+// ======================= v2.8: vehicles, checkpoints =======================
+
+export { HOSPITALS, ROUTES };
+/** The vehicle an officer crews (not out of service). */
+export const crewVehicle = (personId: string) => state.vehicles.find((v) => v.crewIds.includes(personId) && v.status !== 'out_of_service');
+export const vehicleById = (id?: string) => state.vehicles.find((v) => v.id === id);
+
+/** A vehicle starts a straight-line response to a case from where it is now. */
+function vehicleRespond(at: number, vehicleId: string, i: Incident, by: Person | typeof SYSTEM) {
+  const v = state.vehicles.find((x) => x.id === vehicleId);
+  if (!v || v.status === 'out_of_service') return;
+  const p = vehiclePosition(v, at, state.incidents);
+  v.status = 'responding';
+  v.caseId = i.id;
+  v.respondFrom = { lat: p.lat, lng: p.lng, at };
+  if (!seeding) audit(at, by, 'Vehicle responding', `${v.callSign} → ${i.ref}`, i.id);
+}
+/** After a case is resolved its vehicles go back to their route, or to the station. */
+function releaseVehicles(caseId: string) {
+  for (const v of state.vehicles)
+    if (v.caseId === caseId && (v.status === 'responding' || v.status === 'onscene')) {
+      v.status = v.routeId ? 'patrolling' : 'available';
+      v.caseId = undefined;
+      v.respondFrom = undefined;
+    }
+}
+/** An officer's crew follows their transfer: off the old station's vehicles, onto one at the new station. */
+function moveCrew(at: number, me: Person, p: Person, toStationId: string) {
+  for (const v of state.vehicles) if (v.crewIds.includes(p.id)) v.crewIds = v.crewIds.filter((x) => x !== p.id);
+  const target = state.vehicles
+    .filter((v) => v.stationId === toStationId && v.status !== 'out_of_service' && v.kind !== 'motorcycle')
+    .sort((a, b) => a.crewIds.length - b.crewIds.length || a.callSign.localeCompare(b.callSign))[0];
+  if (target) {
+    target.crewIds = [...target.crewIds, p.id];
+    audit(at, me, 'Crew changed', `${p.name} now crews ${target.callSign} (transfer)`);
+  }
+}
+
+const OOS_REASONS: OutOfServiceReason[] = ['No fuel', 'Under repair', 'No crew', 'Accident'];
+const canRunStation = (me: Person, stationId: string) => canManageStation(me, stationId) && !isAdmin(me);
+const isDutyLeadP = (p: Person) => p.role === 'ops_manager' && p.agencyId === controlRoom().id;
+
+/** Commander actions on vehicles and checkpoints (all audited; out-of-service and checkpoints post in station chat). */
+export const fleet = {
+  outOfService: (vehicleId: string, reason: OutOfServiceReason): string | undefined => {
+    const me = persona();
+    const v = state.vehicles.find((x) => x.id === vehicleId);
+    if (!v) return 'Vehicle not found';
+    if (!canRunStation(me, v.stationId)) return "Only the station's commander can change its vehicles";
+    if (!OOS_REASONS.includes(reason)) return 'Choose a reason';
+    if (v.status === 'responding' || v.status === 'onscene') return `${v.callSign} is on a case — finish it first`;
+    const at = now();
+    v.status = 'out_of_service';
+    v.statusReason = reason;
+    audit(at, me, 'Vehicle out of service', `${v.callSign}: ${reason}`);
+    systemPost(v.stationId, `${v.callSign} out of service — ${reason.toLowerCase()}.`, at);
+    commit();
+  },
+  backInService: (vehicleId: string): string | undefined => {
+    const me = persona();
+    const v = state.vehicles.find((x) => x.id === vehicleId);
+    if (!v) return 'Vehicle not found';
+    if (!canRunStation(me, v.stationId)) return "Only the station's commander can change its vehicles";
+    if (v.status !== 'out_of_service') return 'Already in service';
+    if (!v.crewIds.length) return 'Give it a crew first';
+    const at = now();
+    v.status = v.routeId ? 'patrolling' : 'available';
+    v.statusReason = undefined;
+    audit(at, me, 'Vehicle back in service', v.callSign);
+    systemPost(v.stationId, `${v.callSign} back in service.`, at);
+    commit();
+  },
+  setCrew: (vehicleId: string, crewIds: string[]): string | undefined => {
+    const me = persona();
+    const v = state.vehicles.find((x) => x.id === vehicleId);
+    if (!v) return 'Vehicle not found';
+    if (!canRunStation(me, v.stationId)) return "Only the station's commander can change its crews";
+    if (crewIds.length > 4) return 'At most 4 crew';
+    if (crewIds.some((id) => person(id)?.agencyId !== v.stationId)) return 'Crew must be officers of this station';
+    for (const o of state.vehicles) if (o.id !== v.id) o.crewIds = o.crewIds.filter((x) => !crewIds.includes(x));
+    v.crewIds = [...crewIds];
+    audit(now(), me, 'Crew changed', `${v.callSign}: ${crewIds.map((id) => person(id)?.name).join(', ') || 'no crew'}`);
+    commit();
+  },
+  setRoute: (vehicleId: string, routeId?: string): string | undefined => {
+    const me = persona();
+    const v = state.vehicles.find((x) => x.id === vehicleId);
+    if (!v) return 'Vehicle not found';
+    if (!canRunStation(me, v.stationId)) return "Only the station's commander can assign routes";
+    const r = routeId ? ROUTES.find((x) => x.id === routeId) : undefined;
+    if (routeId && (!r || r.stationId !== v.stationId)) return "Choose one of this station's routes";
+    v.routeId = routeId;
+    if (v.status === 'available' && routeId) v.status = 'patrolling';
+    if (v.status === 'patrolling' && !routeId) v.status = 'available';
+    audit(now(), me, 'Patrol route assigned', `${v.callSign}: ${r?.name ?? 'no route'}`);
+    commit();
+  },
+  /** Commanders (their station) and the duty lead (any station) add a temporary checkpoint from the map. */
+  addCheckpoint: (v: { stationId?: string; name: string; road: string; kind: CheckpointKind; lat: number; lng: number; hours?: number; startAt?: number; staffIds: string[] }): string | undefined => {
+    const me = persona();
+    const stationId = v.stationId ?? me.agencyId ?? '';
+    if (!(isDutyLeadP(me) || canRunStation(me, stationId))) return 'Only a commander or the duty lead can add checkpoints';
+    if (!agency(stationId) || !['police', 'corps'].includes(agency(stationId)!.kind)) return 'Choose a police or Amotekun station';
+    if (!v.name.trim() || !v.road.trim()) return 'Give it a name and a road';
+    if (v.kind === 'community') return 'Community posts are registered by the commander, not added here';
+    const at = now();
+    const from = v.startAt ?? at;
+    const cp: Checkpoint = { id: `cp-${at}-${state.checkpoints.length}`, name: v.name.trim(), stationId, kind: v.kind, lat: v.lat, lng: v.lng, road: v.road.trim(), activeFrom: from, activeTo: v.hours ? from + v.hours * HOUR : undefined, staffIds: v.staffIds, createdBy: me.name, status: from > at ? 'scheduled' : 'active' };
+    state.checkpoints.push(cp);
+    audit(at, me, 'Checkpoint set up', `${cp.name} (${cp.road}) · ${agency(stationId)?.short} · ${v.hours ? `${v.hours} h` : 'until closed'} · ${v.staffIds.length} on post`);
+    systemPost(stationId, `Checkpoint set up: ${cp.name}, ${cp.road}${v.hours ? ` for ${v.hours} h` : ''} (${v.staffIds.map((id) => person(id)?.name).join(', ') || 'staff to be posted'}).`, at);
+    commit();
+  },
+  closeCheckpoint: (id: string): string | undefined => {
+    const me = persona();
+    const cp = state.checkpoints.find((x) => x.id === id);
+    if (!cp) return 'Checkpoint not found';
+    if (!(isDutyLeadP(me) || canRunStation(me, cp.stationId))) return 'Only a commander or the duty lead can close checkpoints';
+    if (cp.status === 'closed') return 'Already closed';
+    const at = now();
+    cp.status = 'closed';
+    cp.activeTo = at;
+    audit(at, me, 'Checkpoint closed', `${cp.name} (${cp.road})`);
+    systemPost(cp.stationId, `Checkpoint closed: ${cp.name}.`, at);
+    commit();
+  },
+};
+/** Checkpoint states follow the demo clock (scheduled → active → closed when its time is up). */
+export function checkpointStatus(cp: Checkpoint, at = now()): Checkpoint['status'] {
+  if (cp.status === 'closed') return 'closed';
+  if (cp.activeFrom > at) return 'scheduled';
+  if (cp.activeTo && cp.activeTo <= at) return 'closed';
+  return 'active';
+}
+/** Oversight only: the nearest checkpoint within 300 m of a place (complaints often come from checkpoints). */
+export function checkpointNear(lat: number, lng: number, metres = 300) {
+  return state.checkpoints.map((cp) => ({ cp, d: km(cp.lat, cp.lng, lat, lng) * 1000 })).filter((x) => x.d <= metres).sort((a, b) => a.d - b.d)[0]?.cp;
+}
+
 // ---------- boot ----------
 
 import { buildSeed, initialDuty, seedCaseCards, seedChat, seedV23 } from './seed';
@@ -2729,6 +2912,8 @@ function fresh(): State {
     alertOpened: {},
     alertMute: {},
     mapViews: {},
+    vehicles: [],
+    checkpoints: [],
   };
 }
 
@@ -2755,7 +2940,10 @@ function boot() {
   quietBefore = start - 6 * HOUR;
   readBefore = start - 2 * HOUR; // v2.6 §4: a believable starting inbox
   seeding = true;
+  state.vehicles = seedVehicles(dep.people);
+  state.checkpoints = seedCheckpoints(start, dep.people);
   buildSeed({ start, submitAt: (at, input) => submitAt(at, input).incident, actAt, escalate });
+  seedResponses(start);
   state.duty = initialDuty(start);
   const chatApi = { start, post: (at: number, personId: string, stationId: string, v: Parameters<typeof post>[3]) => post(at, person(personId)!, channelIdOf(stationId), v), system: systemPost, broadcast: seedBroadcast, transfer: seedTransfer };
   seedChat(chatApi);
@@ -2771,6 +2959,20 @@ function boot() {
   tick();
   state.incidents.sort((a, b) => b.createdAt - a.createdAt);
   state.alertsSince = Date.now(); // seeded history never rings
+  // v2.8: seeded cases with en-route or on-scene officers put their vehicle on the case.
+  for (const i of state.incidents) {
+    if (i.status !== 'in_progress' || !i.officerId || !i.t.enRoute) continue;
+    const v = crewVehicle(i.officerId);
+    if (!v || v.caseId) continue;
+    v.status = i.t.onScene ? 'onscene' : 'responding';
+    v.caseId = i.id;
+  }
+  // v2.8: seeded en-route cases show their vehicle on the way now (not already arrived).
+  for (const v of state.vehicles)
+    if (v.status === 'responding' && v.caseId) {
+      const home = stationPoint(v.stationId);
+      v.respondFrom = { lat: home.lat, lng: home.lng, at: start - 3 * MIN };
+    }
   // v2.6 §4: updates about seeded cases that are already finished have been seen.
   for (const n of state.inbox) {
     const i = n.incidentId ? state.incidents.find((x) => x.id === n.incidentId) : undefined;
@@ -2789,6 +2991,23 @@ function boot() {
     if (old.size) for (const n of state.inbox) if (n.to === pid && n.incidentId && old.has(n.incidentId)) n.read = true;
   }
   commit();
+}
+
+/** v2.8: two security cases being answered right now, so vehicles are seen responding on first load. */
+function seedResponses(start: number) {
+  const plan: [string, string, string, string, string, string][] = [
+    ['pol-iwo', 'IWO-P1', 'ibne', 'Gbagi', 'Armed robbery reported at Gbagi market, two men on a motorcycle', 'robbery'],
+    ['crp-ibd', 'AMO-IB-1', 'ibn', 'Mokola', 'Fight between youths at Mokola roundabout, one person injured', 'violence'],
+  ];
+  plan.forEach(([stationId, call, lgaId, area, text, subcategory], k) => {
+    const at0 = start - (16 - k * 3) * MIN;
+    const v = state.vehicles.find((x) => x.callSign === call);
+    if (!v || !canDispatch(v)) return;
+    const i = submitAt(at0, { text, category: 'security', subcategory, lgaId, area, identity: 'anonymous', channel: 'web' }).incident;
+    actAt(at0 + 2 * MIN, 'disp1', i.id, 'verifyAndPass', { subcategory, severity: 'high', toAgencyId: stationId, reason: 'Covers this area', vehicleId: v.id });
+    actAt(at0 + 3 * MIN, v.crewIds[0], i.id, 'acceptHandoff');
+    actAt(at0 + 4 * MIN, v.crewIds[0], i.id, 'start');
+  });
 }
 
 /** Seeding helper: run an action as a given person at a given time. */

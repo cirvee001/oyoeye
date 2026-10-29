@@ -122,7 +122,7 @@ export function Cases({ query = '' }: { query?: string }) {
       <Tabs tabs={tabs.map((t) => ({ id: t.id, label: t.label, count: filtered.filter(t.test).length }))} value={tab.id} onChange={(id) => set({ tab: id })} />
       {view === 'map' ? (
         <div className="cases-map">
-          <LiveMap rows={rows} context={filtered} />
+          <LiveMap rows={rows} context={filtered} panel height={560} />
         </div>
       ) : (
         <CaseTable key={query} rows={rows} at={at} empty={tab.id === 'pending' || tab.id === 'toaccept' ? 'No cases waiting. New cases appear here and in your inbox.' : 'Nothing in this list right now.'} />

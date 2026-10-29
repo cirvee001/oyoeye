@@ -258,6 +258,8 @@ export interface SosResponse {
   reason?: string;
   at?: number;
   by?: string;
+  /** v2.8: the nearest vehicle of that unit, when the unit has one. */
+  vehicleId?: string;
 }
 
 export interface Report {
@@ -316,6 +318,8 @@ export interface Handoff {
   declineReason?: string;
   /** Where the case goes back to if declined. */
   prev: { agencyId: string; officerId?: string; status: Status; acknowledged?: number };
+  /** v2.8: dispatched from the map — this vehicle turns Responding once the pass is accepted. */
+  vehicleId?: string;
 }
 
 export interface Incident {
@@ -484,4 +488,64 @@ export interface ChatChannel {
   readOnlyIds: string[];
   /** v2.3: the station's community channel (focal persons; no case cards). */
   community?: boolean;
+}
+
+// ======================= v2.8: operational map =======================
+
+export type VehicleKind = 'patrol_car' | 'motorcycle' | 'armoured' | 'fire_truck' | 'ambulance' | 'utility';
+export type VehicleStatus = 'available' | 'patrolling' | 'responding' | 'onscene' | 'out_of_service';
+export type OutOfServiceReason = 'No fuel' | 'Under repair' | 'No crew' | 'Accident';
+
+/** A patrol vehicle. Positions are simulated from the demo clock (never stored per tick). */
+export interface Vehicle {
+  id: string;
+  callSign: string;
+  stationId: string;
+  kind: VehicleKind;
+  plate?: string;
+  crewIds: string[];
+  status: VehicleStatus;
+  statusReason?: OutOfServiceReason;
+  routeId?: string;
+  caseId?: string;
+  /** Where and when the current response started (straight line to the case). */
+  respondFrom?: { lat: number; lng: number; at: number };
+  /** Spreads vehicles on the same route. */
+  phase: number;
+  lastPosition?: { lat: number; lng: number };
+  heading?: number;
+  history: { lat: number; lng: number; at: number }[];
+}
+
+export type CheckpointKind = 'permanent' | 'temporary' | 'joint' | 'community';
+export type CheckpointStatus = 'active' | 'scheduled' | 'closed';
+export interface Checkpoint {
+  id: string;
+  name: string;
+  stationId: string;
+  kind: CheckpointKind;
+  lat: number;
+  lng: number;
+  road: string;
+  activeFrom: number;
+  activeTo?: number;
+  staffIds: string[];
+  createdBy: string;
+  status: CheckpointStatus;
+}
+
+export interface PatrolRoute {
+  id: string;
+  stationId: string;
+  name: string;
+  points: [number, number][];
+}
+
+/** Reference places (fictional / generic names). */
+export interface Hospital {
+  id: string;
+  name: string;
+  lgaId: string;
+  lat: number;
+  lng: number;
 }

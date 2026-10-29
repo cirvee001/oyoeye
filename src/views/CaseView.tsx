@@ -26,13 +26,14 @@ import {
   subLabel,
   useStore,
 } from '../store';
-import { CHANNEL, CatIcon, Chips, ConfirmButton, Icon, PhotoInput, Priority, Sheet, StatusPill, Stepper, ago, dayTime, go, hhmm, run, useNow, isSos } from '../ui';
+import { CHANNEL, CatIcon, Chips, ConfirmButton, Icon, PhotoInput, Priority, Sheet, StatusPill, Stepper, ago, dayTime, go, hhmm, run, useNow, isSos, useQuery } from '../ui';
 import { credibility } from './credibility';
 import { LiveMap } from './LiveMap';
 import { OfficerSosButton } from './Safety';
-import { markAlertOpened, markCaseRead } from '../store';
+import { markAlertOpened, markCaseRead, now } from '../store';
 import { fmtDayName, fmtTimeWat, lagosDayStart } from '../format';
 import { handoffClock } from '../countdown';
+import { VEHICLE_STATUS_LABEL, nearestVehicles } from '../fleet';
 import { GROUP_TIP, REJECT_REASONS, callbackNeeded, canCloseOfficerSos, rejectLabel, safety, standing } from '../store';
 
 const back = () => (history.length > 1 ? history.back() : go('/cases'));
@@ -466,7 +467,8 @@ interface Act {
 function useNextStep(i: Incident) {
   const me = persona();
   const at = useNow(5000);
-  const [sheet, setSheet] = useState<SheetKind>('');
+  const passQ = useQuery().get('pass');
+  const [sheet, setSheet] = useState<SheetKind>(() => (passQ && isControl(me) && isOpen(i) ? (['pending', 'verified'].includes(i.status) ? 'verify' : 'pass') : ''));
   const h = pendingHandoff(i);
   const control = isControl(me);
   const manager = isManagerOf(me, i.agencyId) && agency(i.agencyId)?.kind !== 'control_room';
@@ -736,11 +738,12 @@ function reasonText(chip: string, text: string) {
 }
 
 function ActionSheet({ kind, i, onClose }: { kind: SheetKind; i: Incident; onClose: () => void }) {
+  const vehicleQ = useQuery().get('pass') ?? undefined;
   switch (kind) {
     case 'verify':
     case 'pass':
     case 'assign':
-      return <PassSheet i={i} mode={kind} onClose={onClose} />;
+      return <PassSheet i={i} mode={kind} onClose={onClose} vehicleId={vehicleQ} />;
     case 'handback':
       return <ReasonSheet title="Pass case — pass back to my commander" chips={['Officer off duty', 'Needs armed response', 'Outside our area', 'Other']} button="Pass back to my commander" onClose={onClose} onSubmit={(r) => run(actions.handBack(i.id, r), 'Passed back to your commander. They must accept it.')} />;
     case 'decline':
@@ -806,9 +809,10 @@ const SECURITY_KINDS = ['police', 'corps', 'sensitive_desk', 'emergency'];
 type PassTo = 'unit' | 'person' | 'control';
 
 /** "Pass case" modal, like HospEase TransferAppointmentModal (PRD v2.1 §4.4). */
-function PassSheet({ i, mode, onClose }: { i: Incident; mode: 'verify' | 'pass' | 'assign'; onClose: () => void }) {
+function PassSheet({ i, mode, onClose, vehicleId }: { i: Incident; mode: 'verify' | 'pass' | 'assign'; onClose: () => void; vehicleId?: string }) {
   const me = persona();
   const control = isControl(me);
+  const [veh, setVeh] = useState<string | undefined>(vehicleId);
   const desk = me.role === 'sensitive';
   const manager = !control && !desk;
   const [category, setCategory] = useState<CategoryId>(i.category === 'other' ? 'waste' : i.category);
@@ -836,7 +840,11 @@ function PassSheet({ i, mode, onClose }: { i: Incident; mode: 'verify' | 'pass' 
     .sort((a, b) => Number(onDuty(b.id)) - Number(onDuty(a.id)) || officerLoad(a.id) - officerLoad(b.id));
   const chips = mode === 'verify' ? ['Covers this area', ...REASONS] : to === 'person' ? ['Nearest patrol', 'On duty in the area', 'Officer off duty', 'Other'] : REASONS;
   const reason = reasonText(chip, note);
-  const value = to === 'control' ? `a:${cr.id}` : target;
+  // v2.8 §4: nearest available vehicles (out of service never suggested; the gap is shown)
+  const nearV = control && security && !i.locationUnknown && mode !== 'assign' ? nearestVehicles(getState().vehicles, i.lat, i.lng, now(), getState().incidents, 3, (sid) => ['police', 'corps'].includes(agency(sid)?.kind ?? '') && (agency(sid)?.status ?? 'live') === 'live') : undefined;
+  const chosen = veh ? getState().vehicles.find((v) => v.id === veh) : undefined;
+  const effTarget = chosen && !target ? `a:${chosen.stationId}` : target;
+  const value = to === 'control' ? `a:${cr.id}` : effTarget;
 
   const submit = () => {
     if (!value) return run('Choose who to pass it to');
@@ -845,10 +853,11 @@ function PassSheet({ i, mode, onClose }: { i: Incident; mode: 'verify' | 'pass' 
     const toPersonId = t === 'p' ? v : undefined;
     const toAgencyId = t === 'p' ? person(v)!.agencyId! : v;
     const label = t === 'p' ? person(v)!.name : agency(v)!.short;
+    const vehicleId = chosen && chosen.stationId === toAgencyId ? chosen.id : undefined;
     const err =
       mode === 'verify'
-        ? actions.verifyAndPass(i.id, { category: control ? category : undefined, subcategory: control ? sub : undefined, severity: control ? sev : undefined, toAgencyId, reason, note: chip === 'Other' ? undefined : note || undefined })
-        : actions.passCase(i.id, { toAgencyId, toPersonId, reason, note: chip === 'Other' ? undefined : note || undefined });
+        ? actions.verifyAndPass(i.id, { category: control ? category : undefined, subcategory: control ? sub : undefined, severity: control ? sev : undefined, toAgencyId, reason, note: chip === 'Other' ? undefined : note || undefined, vehicleId })
+        : actions.passCase(i.id, { toAgencyId, toPersonId, reason, note: chip === 'Other' ? undefined : note || undefined, vehicleId });
     if (err) return run(err);
     const after = getState().incidents.find((x) => x.id === i.id)!;
     const msg = after.armedHold ? `This report names a group. It is waiting for the duty lead to confirm armed dispatch to ${label}.` : `Passed to ${label}. They have ${ackMinutes(after)} min to accept.`;
@@ -935,6 +944,25 @@ function PassSheet({ i, mode, onClose }: { i: Incident; mode: 'verify' | 'pass' 
             </div>
           )}
           {sensitiveSub && control && <div className="notice sealed small">This type goes to the restricted desk, not to a patrol unit. Reporter identity stays sealed.</div>}
+          {nearV && (
+            <div className="field near-veh">
+              <span>Nearest available vehicles</span>
+              {!nearV.top.length ? (
+                <div className="small muted">No vehicle available nearby — pass to a unit.</div>
+              ) : (
+                <div className="opts">
+                  {nearV.top.map((x) => (
+                    <label key={x.v.id} className={`pick${veh === x.v.id ? ' on' : ''}`}>
+                      <input type="radio" name="nearveh" checked={veh === x.v.id} onChange={() => (setVeh(x.v.id), setTo('unit'), setTarget(`a:${x.v.stationId}`))} />
+                      <span>{`${x.v.callSign} · ${agency(x.v.stationId)?.short} · ${VEHICLE_STATUS_LABEL[x.v.status]} · ${x.km} km · ${x.etaMin} min`}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              {nearV.outNearer > 0 && <div className="tiny muted oos-gap">{`(${nearV.outNearer} nearer vehicle${nearV.outNearer === 1 ? '' : 's'} out of service)`}</div>}
+              {chosen && <div className="tiny">{`Crew lead ${person(chosen.crewIds[0])?.name ?? '—'} is pre-selected. ${chosen.callSign} turns Responding once the pass is accepted.`}</div>}
+            </div>
+          )}
           {options.length > 1 && (
             <div className="field">
               <span>Pass to</span>
@@ -951,7 +979,7 @@ function PassSheet({ i, mode, onClose }: { i: Incident; mode: 'verify' | 'pass' 
           {to !== 'control' && (
             <label className="field">
               <span>{to === 'person' ? 'Officer' : desk ? 'Partner (identity stays sealed)' : 'Unit / agency'}</span>
-              <select className="input" value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Pass to">
+              <select className="input" value={effTarget} onChange={(e) => (setTarget(e.target.value), setVeh(undefined))} aria-label="Pass to">
                 <option value="">Choose…</option>
                 {to === 'person'
                   ? people.map((p) => (
@@ -976,7 +1004,7 @@ function PassSheet({ i, mode, onClose }: { i: Incident; mode: 'verify' | 'pass' 
             <textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. approach quietly; caller hiding in a shop" />
           </label>
           <button className="btn primary lg block" disabled={!value || !reason} onClick={submit}>
-            {mode === 'verify' && i.status === 'pending' ? 'Verify & pass case' : mode === 'assign' ? 'Assign' : 'Pass case'}
+            {mode === 'verify' && i.status === 'pending' ? 'Verify & pass case' : 'Pass case'}
           </button>
           <p className="tiny muted center">The receiver gets an inbox alert with Accept / Decline.{i.restricted ? ' Reporter identity is never sent.' : ''}</p>
         </div>

@@ -307,6 +307,33 @@ messages. Normal messages only raise the Chat unread count; urgent messages, bro
   and assertive SOS announcements, text labels and in-text errors on forms, AA contrast for status
   pills and grey text, and `prefers-reduced-motion` (no pulses, markers jump, no slide-ins).
 
+### Operational map (steps 29–32, PRD v2.8)
+
+29. **Operational map.** Duty lead → *Cases* → **Map**. It opens on the **Dark** base (CARTO; Standard and Light are in
+    **Layers**, top right). In Layers turn on **Patrol vehicles**, **Checkpoints** and **Patrol routes**. The
+    **Resources** panel on the left says "Vehicles: … available · … patrolling · … responding · … on scene · 5 out of
+    service" — click a part to filter the map. Type "Police Ibarapa" in its search and press Enter: 2 of its 3 vehicles
+    are out of service (no fuel, under repair) and its marker shows the amber warning. Press **+15m**: patrolling
+    vehicles move along their (approximate) routes; IWO-P1 and AMO-IB-1 are already responding to seeded cases.
+30. **Dispatch from the map.** Raise a new SOS (citizen, Agbowo). The operator opens **Verify & pass**: "Nearest
+    available vehicles", e.g. "BDJ-P1 · Police Bodija · Patrolling · 1.2 km · 2 min" (out-of-service vehicles are
+    never offered; "(2 nearer vehicles out of service)" shows the gap in grey). Choose it — the crew lead is
+    pre-selected. When CSP Lawal (or the crew lead) accepts, the vehicle turns **Responding** and drives toward the
+    SOS on **+15m**; click it on the map to see its crew, its line to the case and its breadcrumb. With a case
+    selected, an available vehicle's popup also offers **Pass this case to …**.
+31. **Temporary checkpoint.** CSP Lawal → *Cases* → **Map** → right-click (long-press on a phone) on the
+    Bodija–Sango road → **Add checkpoint here** → 4 h stop-and-search with two officers. It appears on the map and in
+    the Police Bodija chat ("Checkpoint set up: …"). Open it → **Close checkpoint**. Vehicles: *My officers* →
+    **Vehicles** (out of service with a reason, back in service, crew, patrol route — all audited).
+32. **Wall view.** The coordinator → *Cases* → **Map** → **Wall view**: full-screen dark map, the resources panel and a
+    live ticker of the latest 5 key events. Raise an Officer SOS as Grace: the nearest units are found by their
+    **vehicles** ("OFFICER NEEDS HELP — … from your vehicle AMO-IB-2. GO?"), and the ticker and map update. Esc exits.
+
+Who sees what: the control room sees every vehicle, checkpoint and route; a commander their own (plus joint
+checkpoints and vehicles responding to their cases); a field officer their own vehicle and station; the Governor
+counts per station / LGA only; the chairman, citizens, focal persons and the public none — enforced in the map
+data itself, not just hidden. Complaints near a checkpoint show "Near checkpoint: …" to the oversight panel only.
+
 Seeded on reset: a pending SOS (Olodo), the step-6 armed case passed to Grace, the
 step-7 Sango case, a handoff waiting at Police Mapo, an unclassified report waiting
 for review, Adewale's drainage case *Resolved* and waiting for him to confirm, and
@@ -335,7 +362,7 @@ Backup requested, Handoff pending.
 | --- | --- |
 | Routing matrix (most specific rule wins, coverage-based targets) | AI triage (keyword rules; English, Yoruba, Pidgin) |
 | Handoffs with accept/decline, SLA clocks, escalation ladder | OTP, SMS, WhatsApp, push (written to an outbox) |
-| Duty roster: on-duty people first, then the next role up | GPS ("Simulate my location" in Demo controls); map tiles from OpenStreetMap |
+| Duty roster: on-duty people first, then the next role up | GPS ("Simulate my location" in Demo controls); vehicle positions (from the demo clock, straight lines and approximate routes); map tiles from OpenStreetMap / CARTO |
 | Duplicate merging; "Reported by N people" counts distinct reporters | Voice notes, USSD, 615 telephony |
 | Evidence before resolve; citizen confirmation and reopen | Database (`localStorage`) |
 | Role-based access, sealed/anonymous identities, break-glass | |
@@ -355,7 +382,8 @@ Backup requested, Handoff pending.
   `useLang`
 - `src/alerts.ts` + `src/sound.ts` — who hears which alert, repeat/stop, Web Audio chimes
 - `src/geo.ts` — "Use my location", nearest area, outside-Oyo check, simulated points
-- `src/mapdata.ts` — map data with the privacy rules, legend and starting views
+- `src/mapdata.ts` — map data with the privacy rules (incl. `mapResources`: who sees vehicles, checkpoints and routes), legend, starting views, clustering, ticker
+- `src/fleet.ts` — patrol vehicles, checkpoints, routes and hospitals (seed), simulated movement, ETA, breadcrumbs, nearest vehicles
 - `src/roles.ts` — role shapes, the per-role sidebar menus (max 5) and landing pages
 - `src/views/` — SignIn (+ Activate), Overview, Cases (work list), Chat (station group chat), Stations (admin stations & staff, rules), CaseView (header actions, stepper,
   details, Pass case modal, timeline), Officers, Reports, Inbox, Profile, Citizen (home,
