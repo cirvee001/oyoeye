@@ -29,11 +29,47 @@ export const LAYERS: { id: Layer; label: string; group: 'Incidents' | 'Resources
 // All three bases use keyless OpenStreetMap tiles; Dark and Light are CSS filters on the tile layer
 // (CARTO basemaps now need an API key and served "API KEY REQUIRED" tiles).
 const OSM_TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-export const BASES: { id: BaseMap; label: string; url: string; attribution: string }[] = [
-  { id: 'osm', label: 'Standard', url: OSM_TILES, attribution: '© OpenStreetMap contributors' },
-  { id: 'dark', label: 'Dark', url: OSM_TILES, attribution: '© OpenStreetMap contributors' },
-  { id: 'light', label: 'Light', url: OSM_TILES, attribution: '© OpenStreetMap contributors' },
+/** `flavor` is the Protomaps style used when the bundled Oyo map file is present (see LOCAL_MAP). */
+export const BASES: { id: BaseMap; label: string; url: string; attribution: string; flavor: string }[] = [
+  { id: 'osm', label: 'Standard', url: OSM_TILES, attribution: '© OpenStreetMap contributors', flavor: 'light' },
+  { id: 'dark', label: 'Dark', url: OSM_TILES, attribution: '© OpenStreetMap contributors', flavor: 'dark' },
+  { id: 'light', label: 'Light', url: OSM_TILES, attribution: '© OpenStreetMap contributors', flavor: 'grayscale' },
 ];
+
+/**
+ * The bundled Oyo map: a Protomaps (OpenStreetMap data) extract served from the app itself, so the
+ * map works without internet. Built with `npm run map:oyo` (see README). If the file is missing,
+ * the map falls back to online OSM tiles.
+ */
+export const LOCAL_MAP = {
+  url: 'tiles/oyo.pmtiles',
+  attribution: '© OpenStreetMap contributors · Protomaps',
+  /** Data goes up to this zoom; closer zooms enlarge it. */
+  maxDataZoom: 14,
+  /** Oyo State plus a margin: what the extract covers [[south, west], [north, east]]. */
+  bounds: [
+    [6.6, 2.6],
+    [9.6, 5.0],
+  ] as [[number, number], [number, number]],
+};
+
+let localMapCheck: Promise<boolean> | undefined;
+/**
+ * Is the bundled Oyo map file served? Reads its first 7 bytes and checks the "PMTiles" signature,
+ * so a dev-server fallback page is never mistaken for the map. Checked once per page load.
+ */
+export function localMapAvailable(): Promise<boolean> {
+  localMapCheck ??= (async () => {
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}${LOCAL_MAP.url}`, { headers: { Range: 'bytes=0-6' } });
+      if (!res.ok) return false;
+      return new TextDecoder().decode((await res.arrayBuffer()).slice(0, 7)) === 'PMTiles';
+    } catch {
+      return false;
+    }
+  })();
+  return localMapCheck;
+}
 
 /** Never plotted at their exact point for anyone except the restricted desk. */
 export const SENSITIVE_SUBS = ['gbv', 'tip', 'kidnapping'];

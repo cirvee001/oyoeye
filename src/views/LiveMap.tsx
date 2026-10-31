@@ -3,6 +3,8 @@ import type * as Leaflet from 'leaflet';
 import type { CheckpointKind, Incident, OutOfServiceReason, VehicleStatus } from '../platform/types';
 import {
   BASES,
+  LOCAL_MAP,
+  localMapAvailable,
   CLUSTER_COLOR,
   LAYERS,
   STATE_BOUNDS,
@@ -104,6 +106,7 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
   const win: TimeWin = prefs?.time ?? '7d';
   const base: BaseMap = wall ? 'dark' : (prefs?.base ?? defaultBase(me));
   const [offline, setOffline] = useState(false);
+  const [mapSource, setMapSource] = useState<'local' | 'online'>('online');
   const [legendSheet, setLegendSheet] = useState(false);
   const [layerOpen, setLayerOpen] = useState(false);
   const [sel, setSel] = useState<Sel>(null);
@@ -114,7 +117,7 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
   const [cpAt, setCpAt] = useState<{ lat: number; lng: number }>();
   const [sheetOpen, setSheetOpen] = useState(false);
   const elRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<{ L: typeof Leaflet; map: Leaflet.Map; group: Leaflet.LayerGroup; labels: Leaflet.LayerGroup; tiles?: Leaflet.TileLayer; pin?: Leaflet.Marker } | null>(null);
+  const mapRef = useRef<{ L: typeof Leaflet; map: Leaflet.Map; group: Leaflet.LayerGroup; labels: Leaflet.LayerGroup; tiles?: Leaflet.GridLayer; pin?: Leaflet.Marker } | null>(null);
   const pageKey = picker ? undefined : wall ? 'wall' : (page ?? routePage()) + (focus ? ':case' : '');
   const programmatic = useRef(false);
   const pickRef = useRef(picker);
@@ -258,7 +261,7 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
       });
       mapRef.current = { L, map, group, labels };
       setZoom(map.getZoom());
-      setTiles();
+      void setTiles();
       draw();
       // Leaflet measures its box once; re-measure when a modal or tab gives it its real size.
       resize = new ResizeObserver(() => map.invalidateSize());
@@ -273,11 +276,12 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Base map: Standard, Dark or Light (all OSM; Dark/Light are CSS filters).
-  // The free OSM tile servers can take several seconds from Nigeria or on weak Wi-Fi. The tile layer
-  // is never removed: if nothing has loaded after 8 s (while the map is visible) a banner shows
-  // positions-only mode, and it clears itself the moment a tile arrives. Retry and coming back
-  // online redraw the tiles.
+  // Base map: Standard, Dark or Light. When the bundled Oyo map file is present (LOCAL_MAP) it is
+  // drawn from inside the app, so it works without internet; otherwise online OSM tiles are used
+  // (Dark/Light as CSS filters). The free OSM tile servers can take several seconds from Nigeria or
+  // on weak Wi-Fi. The tile layer is never removed: if nothing has loaded after 8 s (while the map
+  // is visible) a banner shows positions-only mode, and it clears itself the moment a tile arrives.
+  // Retry and coming back online redraw the tiles.
   const tileTimer = useRef(0);
   const tilesLoaded = useRef(false);
   const startTileWatch = () => {
@@ -296,13 +300,20 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
     mapRef.current?.tiles?.redraw();
     startTileWatch();
   };
-  const setTiles = () => {
+  const tilesToken = useRef(0);
+  const setTiles = async () => {
+    const token = ++tilesToken.current;
+    const local = await localMapAvailable();
     const m = mapRef.current;
-    if (!m) return;
+    if (!m || token !== tilesToken.current) return;
+    setMapSource(local ? 'local' : 'online');
     const b = BASES.find((x) => x.id === base) ?? BASES[0];
     if (m.tiles) m.map.removeLayer(m.tiles);
     tilesLoaded.current = false;
-    const tiles = m.L.tileLayer(b.url, { maxZoom: 18, attribution: b.attribution, className: `tiles-${b.id}` });
+    const tiles: Leaflet.GridLayer = local
+      ? (await import('protomaps-leaflet')).leafletLayer({ url: LOCAL_MAP.url, flavor: b.flavor, lang: 'en', maxDataZoom: LOCAL_MAP.maxDataZoom, bounds: LOCAL_MAP.bounds, attribution: LOCAL_MAP.attribution, maxZoom: 18 }) as unknown as Leaflet.GridLayer
+      : m.L.tileLayer(b.url, { maxZoom: 18, attribution: b.attribution, className: `tiles-${b.id}` });
+    if (token !== tilesToken.current || mapRef.current !== m) return;
     tiles.on('tileload', () => {
       tilesLoaded.current = true;
       clearTimeout(tileTimer.current);
@@ -314,7 +325,7 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
     startTileWatch();
   };
   useEffect(() => {
-    setTiles();
+    void setTiles();
     const online = () => retryTiles();
     addEventListener('online', online);
     return () => {
@@ -681,7 +692,7 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
           {home && !picker ? ` · Opens on: ${home.label}` : ''}
         </span>
         <span className="map-updated">{`Last updated ${fmtTimeWat(at)}`}</span>
-        <span>{`${(BASES.find((b) => b.id === base) ?? BASES[0]).attribution} · simulated positions`}</span>
+        <span>{`${mapSource === 'local' ? `${LOCAL_MAP.attribution} · offline Oyo map` : (BASES.find((b) => b.id === base) ?? BASES[0]).attribution} · simulated positions`}</span>
       </div>
       {/* Text version of what is plotted (screen readers, tests). */}
       <ul className="map-items" hidden>

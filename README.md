@@ -15,6 +15,21 @@ in the browser. The free OSM tile servers can be slow from Nigeria or on weak Wi
 arrived after 8 s (while the map is visible) it shows LGA labels and a "showing positions only"
 banner with a Retry button, but keeps trying — the background appears as soon as a tile loads, and
 again when the connection comes back. For production, host tiles or use a paid tile provider.
+
+**Offline Oyo map (recommended for presentations).** If `public/tiles/oyo.pmtiles` exists, the map
+is drawn from that file inside the app (Protomaps, OpenStreetMap data), so it needs no internet and
+can't be broken by venue Wi-Fi. Without the file, the map uses online OSM tiles as above. The map
+footer says which one is in use ("offline Oyo map"). To build the file once:
+
+1. Download the `pmtiles` tool for Windows from
+   [github.com/protomaps/go-pmtiles/releases](https://github.com/protomaps/go-pmtiles/releases)
+   (`go-pmtiles_<version>_Windows_x86_64.zip`), unzip it, and put `pmtiles.exe` on your PATH
+   (or set the `PMTILES` environment variable to the full path of `pmtiles.exe`).
+2. Run `npm run map:oyo`. It downloads only Oyo State plus a margin (zoom 0–14) from the latest daily
+   Protomaps build and writes `public/tiles/oyo.pmtiles`.
+3. Reload the app.
+
+Never bulk-download tiles from tile.openstreetmap.org instead: its usage policy forbids it.
 Station coverage is drawn as
 approximate circles around LGA centroids (no real boundaries). Officer positions are simulated
 from the demo clock.
