@@ -273,34 +273,54 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Base map: Standard, Dark or Light (all OSM; Dark/Light are CSS filters). If no tile arrives within 4 s, fall back to positions only.
+  // Base map: Standard, Dark or Light (all OSM; Dark/Light are CSS filters).
+  // The free OSM tile servers can take several seconds from Nigeria or on weak Wi-Fi. The tile layer
+  // is never removed: if nothing has loaded after 8 s (while the map is visible) a banner shows
+  // positions-only mode, and it clears itself the moment a tile arrives. Retry and coming back
+  // online redraw the tiles.
   const tileTimer = useRef(0);
+  const tilesLoaded = useRef(false);
+  const startTileWatch = () => {
+    clearTimeout(tileTimer.current);
+    if (tilesLoaded.current) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) setOffline(true);
+    tileTimer.current = window.setTimeout(() => {
+      const el = elRef.current;
+      // A hidden or zero-size map requests no tiles; wait until it has a size instead of giving up.
+      if (el && (el.clientWidth === 0 || el.clientHeight === 0)) return startTileWatch();
+      if (!tilesLoaded.current) setOffline(true);
+    }, 8000);
+  };
+  const retryTiles = () => {
+    setOffline(false);
+    mapRef.current?.tiles?.redraw();
+    startTileWatch();
+  };
   const setTiles = () => {
     const m = mapRef.current;
     if (!m) return;
     const b = BASES.find((x) => x.id === base) ?? BASES[0];
     if (m.tiles) m.map.removeLayer(m.tiles);
-    let loaded = false;
+    tilesLoaded.current = false;
     const tiles = m.L.tileLayer(b.url, { maxZoom: 18, attribution: b.attribution, className: `tiles-${b.id}` });
     tiles.on('tileload', () => {
-      loaded = true;
+      tilesLoaded.current = true;
+      clearTimeout(tileTimer.current);
       setOffline(false);
     });
     tiles.addTo(m.map);
     tiles.bringToBack();
     m.tiles = tiles;
-    clearTimeout(tileTimer.current);
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) setOffline(true);
-    tileTimer.current = window.setTimeout(() => {
-      if (!loaded && mapRef.current) {
-        mapRef.current.map.removeLayer(tiles);
-        setOffline(true);
-      }
-    }, 4000);
+    startTileWatch();
   };
   useEffect(() => {
     setTiles();
-    return () => clearTimeout(tileTimer.current);
+    const online = () => retryTiles();
+    addEventListener('online', online);
+    return () => {
+      clearTimeout(tileTimer.current);
+      removeEventListener('online', online);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base]);
 
@@ -567,7 +587,14 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
           )}
         </div>
       )}
-      {offline && <div className="map-offline">Map tiles unavailable — showing positions only</div>}
+      {offline && (
+        <div className="map-offline" role="status">
+          <span>Map background is slow or unavailable — showing positions only. It will appear as soon as it loads.</span>
+          <button type="button" className="btn sm" onClick={retryTiles}>
+            Retry
+          </button>
+        </div>
+      )}
       <div className={`map-box${showPanel ? ' with-panel' : ''}`}>
         {resources}
         <div className="map-main">

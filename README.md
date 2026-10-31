@@ -11,8 +11,11 @@ onboarding & chat addendum [`docs/PRD-v2.2-onboarding-chat.md`](docs/PRD-v2.2-on
 map / community / conduct / officer-safety addendum [`docs/PRD-v2.3-map-community-conduct-safety.md`](docs/PRD-v2.3-map-community-conduct-safety.md).
 
 **Live map (v2.3).** Leaflet with OpenStreetMap tiles ("© OpenStreetMap contributors"), loaded only
-in the browser. If no tile arrives within 4 s it switches to a plain grey base with LGA labels and
-the banner "Map tiles unavailable — showing positions only". Station coverage is drawn as
+in the browser. The free OSM tile servers can be slow from Nigeria or on weak Wi-Fi: if no tile has
+arrived after 8 s (while the map is visible) it shows LGA labels and a "showing positions only"
+banner with a Retry button, but keeps trying — the background appears as soon as a tile loads, and
+again when the connection comes back. For production, host tiles or use a paid tile provider.
+Station coverage is drawn as
 approximate circles around LGA centroids (no real boundaries). Officer positions are simulated
 from the demo clock.
 
