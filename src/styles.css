@@ -3294,7 +3294,8 @@ textarea.input {
 /* ---------- v2.3: live map ---------- */
 .livemap { display: grid; gap: 8px; }
 .map-controls { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center; }
-.map-el { width: 100%; border-radius: 10px; border: 1px solid var(--line); background: #e9edf0; z-index: 0; }
+/* overflow + contain + isolation: tiles and markers can never paint outside the map box. */
+.map-el { width: 100%; border-radius: 10px; border: 1px solid var(--line); background: #e9edf0; z-index: 0; overflow: hidden; contain: paint; isolation: isolate; }
 .map-el.fallback { background: repeating-linear-gradient(45deg, #eef1f3 0 12px, #e7ebee 12px 24px); }
 .map-offline { background: #fff4d6; color: #93370d; border: 1px solid #fedf89; border-radius: 8px; padding: 6px 10px; font-size: 13px; font-weight: 600; }
 .map-foot { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
@@ -3627,8 +3628,10 @@ a.statcard:hover .sc-view { text-decoration: underline; }
 .map-view-btns { right: auto; left: 54px; }
 .livemap.base-dark .map-el { background: #1b1f24; }
 /* Dark and Light bases: CSS filters over the keyless OSM tiles. */
-.leaflet-tile-pane .tiles-dark { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.85) saturate(0.6); }
-.leaflet-tile-pane .tiles-light { filter: grayscale(0.85) brightness(1.06) contrast(0.92); }
+/* Filter each tile image, not the whole layer: a filtered layer is composited separately and
+   browsers can fail to clip it to the map box while zooming or panning. */
+.tiles-dark .leaflet-tile { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.85) saturate(0.6); }
+.tiles-light .leaflet-tile { filter: grayscale(0.85) brightness(1.06) contrast(0.92); }
 
 /* layer panel (top-right) */
 .layer-panel { position: absolute; top: 10px; right: 10px; z-index: 600; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
