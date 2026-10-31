@@ -392,36 +392,16 @@ function NoAccess() {
   return <div className="empty">Your role cannot open this page.</div>;
 }
 
-const SIDEBAR_KEY = 'oyoeye:sidebar';
-
 function Shell({ me, menu, path, title, children, citizen }: { me: Person; menu: { path: string; label: string; icon: string; n: number }[]; path: string; title: string; children: ReactNode; citizen?: boolean }) {
   const [, t] = useLang();
   const [drawer, setDrawer] = useState(false);
-  // Desktop: a slim icon rail that opens on hover; "Keep menu open" pins it (remembered per device).
-  const [pinned, setPinned] = useState(() => {
-    try {
-      return localStorage.getItem(SIDEBAR_KEY) === 'open';
-    } catch {
-      return false;
-    }
-  });
-  const togglePinned = () => {
-    setPinned((v) => {
-      try {
-        localStorage.setItem(SIDEBAR_KEY, v ? 'rail' : 'open');
-      } catch {
-        /* storage blocked: the choice lasts for this visit only */
-      }
-      return !v;
-    });
-  };
   useEffect(() => {
     const close = () => setDrawer(false);
     addEventListener('hashchange', close);
     return () => removeEventListener('hashchange', close);
   }, []);
   return (
-    <div className={`shell${drawer ? ' drawer-open' : ''}${pinned ? ' sb-pinned' : ''}${citizen ? ' citizen-shell' : ''}`}>
+    <div className={`shell${drawer ? ' drawer-open' : ''}${citizen ? ' citizen-shell' : ''}`}>
       <a className="skip-link" href="#main" onClick={(e) => (e.preventDefault(), document.getElementById('main')?.focus())}>
         {t('nav.skip')}
       </a>
@@ -456,15 +436,11 @@ function Shell({ me, menu, path, title, children, citizen }: { me: Person; menu:
           <Icon name="logout" size={20} />
           <span className="sb-text">{t('nav.signout')}</span>
         </button>
-        <button className="sb-pin" onClick={togglePinned} aria-pressed={pinned} title={pinned ? 'Collapse menu' : 'Keep menu open'} aria-label={pinned ? 'Collapse menu' : 'Keep menu open'}>
-          <Icon name={pinned ? 'panel-close' : 'panel-open'} size={20} />
-          <span className="sb-text">{pinned ? 'Collapse menu' : 'Keep menu open'}</span>
-        </button>
         </div>
       </aside>
       <div className="shell-main">
-        {/* ☰ opens the drawer on phones and pins/collapses the menu on larger screens */}
-        <TopBar me={me} title={title} onMenu={citizen ? undefined : () => (matchMedia('(max-width: 768px)').matches ? setDrawer(true) : togglePinned())} />
+        {/* ☰ is for phones only (the slide-in drawer); on larger screens the rail opens on hover */}
+        <TopBar me={me} title={title} onMenu={citizen ? undefined : () => setDrawer(true)} />
         {children}
       </div>
     </div>
@@ -490,7 +466,7 @@ function TopBar({ me, title, mobile, onMenu }: { me: Person; title: string; mobi
   return (
     <header className="topbar">
       {onMenu && (
-        <button className="icon-btn hamburger" onClick={onMenu} aria-label="Show or hide the menu" title="Show or hide the menu">
+        <button className="icon-btn hamburger" onClick={onMenu} aria-label="Open menu">
           <Icon name="menu" size={22} />
         </button>
       )}

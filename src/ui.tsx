@@ -8,7 +8,7 @@ import { handoffClock } from './countdown';
 import { readPhoto } from './photo';
 import { fmtAgo, fmtDateTime, fmtNum, fmtPct, fmtTime, fmtTimeWat, lagosDayStart } from './format';
 import {
-  ArrowRightLeft, Bell, LocateFixed, Navigation, Volume2, VolumeX, Maximize2, Layers, Building2, Download, KeyRound, Megaphone, MessageCircle, PanelLeftClose, PanelLeftOpen, Paperclip, Pin, SendHorizontal, Upload, CalendarClock, Camera, ChartColumn, Check, ChevronDown, ChevronLeft, ChevronRight, CircleCheck, CircleHelp, Clock as ClockIcon, Construction, Ellipsis, FileText, Flame, House, Inbox as InboxIcon, LayoutDashboard, ListChecks, ListFilter, LogOut, MapPin, Menu, Mic, PhoneCall, Plus, Route, ScrollText, Search, Shield, Siren, Timer, Trash2, TriangleAlert, User, Users, Waves, X, Zap, type LucideIcon,
+  ArrowRightLeft, Bell, LocateFixed, Navigation, Volume2, VolumeX, Maximize2, Layers, Building2, Download, KeyRound, Megaphone, MessageCircle, Paperclip, Pin, SendHorizontal, Upload, CalendarClock, Camera, ChartColumn, Check, ChevronDown, ChevronLeft, ChevronRight, CircleCheck, CircleHelp, Clock as ClockIcon, Construction, Ellipsis, FileText, Flame, House, Inbox as InboxIcon, LayoutDashboard, ListChecks, ListFilter, LogOut, MapPin, Menu, Mic, PhoneCall, Plus, Route, ScrollText, Search, Shield, Siren, Timer, Trash2, TriangleAlert, User, Users, Waves, X, Zap, type LucideIcon,
 } from 'lucide-react';
 
 export function useNow(ms = 15_000) {
@@ -676,8 +676,6 @@ export function PhotoInput({ value, onChange, label = 'Photo', sample = 'Sample 
 // ---------- icons (lucide-react, the same set HospEase uses) ----------
 
 const ICONS: Record<string, LucideIcon> = {
-  'panel-open': PanelLeftOpen,
-  'panel-close': PanelLeftClose,
   security: Shield,
   fire: Flame,
   flooding: Waves,
