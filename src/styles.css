@@ -426,15 +426,14 @@ kbd {
   display: none;
 }
 
+/* Pages use the full width, with the same 24px side padding as the top bar so their edges line up. */
 .page {
-  padding: 24px;
+  padding: 16px 24px 96px;
   display: grid;
-  gap: 24px;
-  max-width: 1280px;
+  gap: 16px;
   width: 100%;
-  margin: 0 auto;
+  margin: 0;
   align-content: start;
-  padding-bottom: 96px;
 }
 .page-title p {
   margin-top: 2px;
@@ -3546,7 +3545,8 @@ a.statcard { color: inherit; text-decoration: none; position: relative; display:
 a.statcard:hover { text-decoration: none; border-color: var(--primary); box-shadow: 0 2px 8px rgba(16, 24, 40, 0.1); }
 a.statcard:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .statcard.click { cursor: pointer; }
-.sc-view { position: absolute; right: 14px; bottom: 12px; font-size: 12px; font-weight: 600; color: var(--primary); }
+/* in the normal flow (not pinned to the corner) so a long sub-line never runs into it */
+.sc-view { display: block; margin-top: 6px; text-align: right; font-size: 12px; font-weight: 600; color: var(--primary); }
 a.statcard:hover .sc-view { text-decoration: underline; }
 .my-filter { margin-bottom: 4px; }
 
