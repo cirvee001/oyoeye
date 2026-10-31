@@ -85,7 +85,8 @@ export function unitScope(me: Person): 'all' | 'own' | false {
 }
 
 export function defaultLayers(me: Person): Layer[] {
-  if (isControlRoomStaff(me)) return ['incidents', 'units', 'stations'];
+  // Cases come first: officers on foot (often 100+ figures) are one click away in Layers.
+  if (isControlRoomStaff(me)) return ['incidents', 'vehicles', 'stations'];
   if (me.role === 'supervisor' && ['police', 'corps'].includes(agency(me.agencyId)?.kind ?? '')) return ['incidents', 'units', 'stations', 'vehicles'];
   if (me.role === 'officer') return ['incidents', 'vehicles'];
   return ['incidents', 'stations'];

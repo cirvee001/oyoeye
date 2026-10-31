@@ -78,8 +78,14 @@ type Sel = { kind: 'vehicle' | 'case' | 'station' | 'checkpoint'; id: string } |
 
 const routePage = () => (typeof location !== 'undefined' ? location.hash.replace(/^#\/?/, '').split(/[/?]/)[0] : '') || 'home';
 
+// Leaflet stacks markers by latitude unless told otherwise, so small incident pins ended up hidden
+// under officer figures and station markers in busy areas. Fixed layers, bottom to top:
+// officers and stations · vehicles · incidents · SOS.
+const Z = { vehicle: 500, incident: 1000, sos: 2000 };
+
 // ---- marker HTML: shapes as well as colours ----
-const SIZE_PX = (r: number) => Math.round(r * 2.2 + 4);
+// Case pins are the point of the Cases map, so they are drawn bigger than officers and stations.
+const SIZE_PX = (r: number) => Math.round(r * 2.6 + 6);
 function pinHtml(shape: string, color: string, px: number) {
   if (shape === 'triangle') return `<svg width="${px + 6}" height="${px + 6}" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 23 21H1Z" fill="${color}" stroke="#fff" stroke-width="2" stroke-linejoin="round"/><path d="M12 9v5M12 17h.01" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>`;
   if (shape === 'square') return `<span class="mk-sq" style="width:${px}px;height:${px}px;background:${color}"></span>`;
@@ -395,14 +401,14 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
       const popup = `<div class="mp"><b class="mono">${esc(p.ref)}</b><div>${esc(p.type)}</div><span class="pill ${p.tone}">${esc(p.status)}</span><div class="mp-holder">With: ${esc(p.holder)}</div><a href="#/case/${p.caseId}">View case</a></div>`;
       const px = SIZE_PX(p.r);
       const extra = p.pulse ? ' mk-pulse' : '';
-      L.marker([p.lat, p.lng], { icon: icon(pinHtml(p.shape, p.color, px), px + 6, `mk${extra}${dim(`case:${p.caseId}`)}`), alt: p.kind === 'restricted' ? 'Restricted case' : `${p.ref} ${p.status}` })
+      L.marker([p.lat, p.lng], { icon: icon(pinHtml(p.shape, p.color, px), px + 6, `mk${extra}${dim(`case:${p.caseId}`)}`), alt: p.kind === 'restricted' ? 'Restricted case' : `${p.ref} ${p.status}`, zIndexOffset: p.kind === 'sos' ? Z.sos : Z.incident })
         .bindPopup(popup)
         .bindTooltip(pinTip(p, at), { direction: 'top', offset: [0, -px / 2 - 4], className: 'mp-tip', opacity: 1 })
         .on('click', () => setSel({ kind: 'case', id: p.caseId }))
         .addTo(group);
     }
     for (const c of clustered.clusters)
-      L.marker([c.lat, c.lng], { icon: L.divIcon({ className: 'cluster-mk', html: `<span style="--c:${CLUSTER_COLOR(c.worst)}">${c.n}</span>`, iconSize: [34, 34] }), keyboard: false, title: `${c.n} cases — click to zoom in` })
+      L.marker([c.lat, c.lng], { zIndexOffset: Z.incident, icon: L.divIcon({ className: 'cluster-mk', html: `<span style="--c:${CLUSTER_COLOR(c.worst)}">${c.n}</span>`, iconSize: [34, 34] }), keyboard: false, title: `${c.n} cases — click to zoom in` })
         .on('click', () => map.setView([c.lat, c.lng], Math.min(map.getZoom() + 2, 13)))
         .addTo(group);
     // Vehicles last, on top. Lines to their case when it is selected or they are selected.
@@ -420,7 +426,7 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
             : ''
         : '';
       const popup = `<div class="mp mp-veh"><b>${esc(v.callSign)}</b> <span class="tiny">${VEHICLE_KIND_LABEL[v.kind]} · ${esc(v.station)}</span><div><span class="vstatus" style="--c:${v.color}">${VEHICLE_STATUS_LABEL[v.status]}${v.statusReason ? ` — ${esc(v.statusReason)}` : ''}</span></div>${v.caseRef ? `<div>Case <a href="#/case/${v.caseId}">${esc(v.caseRef)}</a>${v.etaMin != null ? ` · ETA ${v.etaMin} min` : ''}</div>` : ''}${v.route ? `<div class="tiny">Route: ${esc(v.route)} (approximate)</div>` : ''}<div class="tiny">Crew: ${v.crew.length ? v.crew.map((c) => `${esc(c.rank ?? '')} ${esc(c.name)}`).join(', ') : 'none'}</div>${passLink}${actions}</div>`;
-      L.marker([v.lat, v.lng], { icon: icon(vehicleMarkerHtml({ call: v.callSign, kind: v.kind, livery: liveryFor(agency(v.stationId)?.kind), statusColor: v.color, heading: v.heading, flash: v.status === 'responding', esc }), 52, `mk mk-vwrap${v.status === 'out_of_service' ? ' oos' : ''}${dim(`vehicle:${v.id}`)}${sel?.id === v.id ? ' selected' : ''}`), keyboard: false, title: `${v.callSign} — ${VEHICLE_STATUS_LABEL[v.status]}`, zIndexOffset: 500 })
+      L.marker([v.lat, v.lng], { icon: icon(vehicleMarkerHtml({ call: v.callSign, kind: v.kind, livery: liveryFor(agency(v.stationId)?.kind), statusColor: v.color, heading: v.heading, flash: v.status === 'responding', esc }), 52, `mk mk-vwrap${v.status === 'out_of_service' ? ' oos' : ''}${dim(`vehicle:${v.id}`)}${sel?.id === v.id ? ' selected' : ''}`), keyboard: false, title: `${v.callSign} — ${VEHICLE_STATUS_LABEL[v.status]}`, zIndexOffset: Z.vehicle })
         .bindPopup(popup)
         .on('click', () => setSel({ kind: 'vehicle', id: v.id }))
         .addTo(group);
@@ -655,7 +661,7 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
           )}
           {legend.length > 0 && (
             <>
-              <details className="map-legend" open={!focus && !wall}>
+              <details className="map-legend">
                 <summary aria-label="Map legend">
                   <Icon name="layers" size={14} /> Legend
                 </summary>
