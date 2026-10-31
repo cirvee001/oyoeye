@@ -45,7 +45,7 @@ export const LOCAL_MAP = {
   url: 'tiles/oyo.pmtiles',
   attribution: '© OpenStreetMap contributors · Protomaps',
   /** Data goes up to this zoom; closer zooms enlarge it. */
-  maxDataZoom: 14,
+  maxDataZoom: 13,
   /** Oyo State plus a margin: what the extract covers [[south, west], [north, east]]. */
   bounds: [
     [6.6, 2.6],

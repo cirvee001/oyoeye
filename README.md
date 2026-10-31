@@ -25,7 +25,7 @@ footer says which one is in use ("offline Oyo map"). To build the file once:
    [github.com/protomaps/go-pmtiles/releases](https://github.com/protomaps/go-pmtiles/releases)
    (`go-pmtiles_<version>_Windows_x86_64.zip`), unzip it, and put `pmtiles.exe` on your PATH
    (or set the `PMTILES` environment variable to the full path of `pmtiles.exe`).
-2. Run `npm run map:oyo`. It downloads only Oyo State plus a margin (zoom 0–14) from the latest daily
+2. Run `npm run map:oyo`. It downloads only Oyo State plus a margin (zoom 0–13, about 18 MB) from the latest daily
    Protomaps build and writes `public/tiles/oyo.pmtiles`.
 3. Reload the app.
 
