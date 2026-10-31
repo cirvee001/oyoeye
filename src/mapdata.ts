@@ -188,7 +188,7 @@ export function unitMarkers(me: Person, at = now()) {
     .map((p) => {
       const pos = officerPosition(p.id, at);
       const target = pos.mode === 'enroute' && pos.caseId ? getState().incidents.find((x) => x.id === pos.caseId) : undefined;
-      return { id: `u-${p.id}`, personId: p.id, lat: pos.lat, lng: pos.lng, mode: pos.mode, heading: target ? bearing(pos, target) : undefined, color: stationColor(agency(p.agencyId)?.kind ?? ''), label: `${p.name} · ${agency(p.agencyId)?.short} · ${pos.mode === 'onscene' ? 'on scene' : pos.mode === 'enroute' ? 'en route' : 'at station'}` };
+      return { id: `u-${p.id}`, personId: p.id, lat: pos.lat, lng: pos.lng, mode: pos.mode, heading: target ? bearing(pos, target) : undefined, color: stationColor(agency(p.agencyId)?.kind ?? ''), org: agency(p.agencyId)?.kind ?? '', label: `${p.name} · ${agency(p.agencyId)?.short} · ${pos.mode === 'onscene' ? 'on scene' : pos.mode === 'enroute' ? 'en route' : 'at station'}` };
     });
 }
 
@@ -232,6 +232,10 @@ export interface LegendItem {
   mark: Shape | 'letter' | 'dot' | 'arrow' | 'dotring' | 'count' | 'hotspot' | 'coverage' | 'vehicle' | 'checkpoint' | 'checkpoint-out' | 'route' | 'hospital' | 'warn';
   color: string;
   letter?: string;
+  /** Vehicle and officer marks draw the same icon as the map: vehicle kind, livery, officer mode. */
+  vkind?: string;
+  livery?: string;
+  mode?: string;
 }
 export interface LegendSection {
   title: string;
@@ -266,7 +270,22 @@ export function legendFor(me: Person, layers: Layer[], opts: { focus?: boolean }
       ],
     });
   if (on.has('vehicles') && vehicleScope(me) !== 'none')
-    out.push({ title: vehicleScope(me) === 'counts' ? 'Vehicles (counts per station)' : 'Patrol vehicles', items: VEHICLE_STATUSES.map((st) => ({ label: VEHICLE_STATUS_LABEL[st], mark: 'vehicle' as const, color: VEHICLE_STATUS_COLOR[st] })) });
+  {
+    const counts = vehicleScope(me) === 'counts';
+    out.push({ title: counts ? 'Vehicles (counts per station)' : 'Vehicle status (ring colour)', items: VEHICLE_STATUSES.map((st) => ({ label: VEHICLE_STATUS_LABEL[st], mark: 'vehicle' as const, color: VEHICLE_STATUS_COLOR[st], vkind: 'patrol_car', livery: 'police' })) });
+    if (!counts)
+      out.push({
+        title: 'Vehicle types (points the way it is driving)',
+        items: [
+          { label: 'Police patrol car', mark: 'vehicle', color: 'transparent', vkind: 'patrol_car', livery: 'police' },
+          { label: 'Amotekun patrol car', mark: 'vehicle', color: 'transparent', vkind: 'patrol_car', livery: 'corps' },
+          { label: 'Motorcycle', mark: 'vehicle', color: 'transparent', vkind: 'motorcycle', livery: 'police' },
+          { label: 'Armoured vehicle', mark: 'vehicle', color: 'transparent', vkind: 'armoured', livery: 'police' },
+          { label: 'Fire truck', mark: 'vehicle', color: 'transparent', vkind: 'fire_truck', livery: 'emergency' },
+          { label: 'Flashing lights = responding to a case', mark: 'vehicle', color: 'transparent', vkind: 'patrol_car', livery: 'police' },
+        ],
+      });
+  }
   if (on.has('checkpoints') && checkpointScope(me) !== 'none')
     out.push({ title: 'Checkpoints', items: [{ label: 'Active', mark: 'checkpoint', color: '#B42318' }, { label: 'Scheduled (outline)', mark: 'checkpoint-out', color: '#B42318' }, { label: 'Joint Police + Amotekun', mark: 'checkpoint', color: '#7E22CE' }] });
   if (on.has('routes') && routeScope(me) !== 'none') out.push({ title: 'Patrol routes', items: [{ label: 'Approximate route (dashed, station colour)', mark: 'route', color: '#1D4ED8' }] });
@@ -275,9 +294,10 @@ export function legendFor(me: Person, layers: Layer[], opts: { focus?: boolean }
     out.push({
       title: 'Officers',
       items: [
-        { label: 'On duty', mark: 'dot', color: '#1D2939' },
-        { label: 'En route (arrow points to the incident)', mark: 'arrow', color: '#1D4ED8' },
-        { label: 'On scene', mark: 'dotring', color: '#B45309' },
+        { label: 'Police officer on foot', mark: 'dot', color: '#1D2939', livery: 'police', mode: 'idle' },
+        { label: 'Amotekun officer on foot', mark: 'dot', color: '#1D2939', livery: 'corps', mode: 'idle' },
+        { label: 'En route (arrow points to the incident)', mark: 'arrow', color: '#1D4ED8', livery: 'police', mode: 'enroute' },
+        { label: 'On scene (amber ring)', mark: 'dotring', color: '#B45309', livery: 'police', mode: 'onscene' },
       ],
     });
   if (on.has('hotspots')) out.push({ title: 'Hotspots', items: [{ label: 'Hotspot — 3 or more security incidents within about 1.5 km', mark: 'hotspot', color: '#D92D20' }] });

@@ -35,6 +35,7 @@ import {
 } from '../mapdata';
 import { VEHICLE_KIND_LABEL, VEHICLE_STATUS_COLOR, VEHICLE_STATUS_LABEL, canDispatch } from '../fleet';
 import { fmtAgo, fmtTimeWat } from '../format';
+import { liveryFor, officerMarkerHtml, vehicleMarkerHtml } from '../mapicons';
 import { roleKind } from '../roles';
 import { agency, controlRoom, dep, fleet, getState, isControl, isManagerOf, lgaOf, now, persona, resetMapView, saveMapView, setMapPrefs, useStore } from '../store';
 import { Icon, Sheet, run, useNow } from '../ui';
@@ -85,14 +86,6 @@ function pinHtml(shape: string, color: string, px: number) {
 }
 const stationHtml = (letter: string, color: string, warning?: string) =>
   `<span class="mk-bldg" style="--c:${color}"><svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><path d="M3 11 13 4l10 7v11H3Z" fill="${color}" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg><b>${letter}</b>${warning ? `<i class="mk-warn ${warning}">!</i>` : ''}</span>`;
-function unitHtml(mode: string, color: string, heading?: number) {
-  if (mode === 'enroute') return `<span class="mk-arrow" style="--c:${color};transform:rotate(${heading ?? 0}deg)"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 20 21 12 16 4 21Z" fill="${color}" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg></span>`;
-  if (mode === 'onscene') return `<span class="mk-dotring" style="--c:${color}"><i></i></span>`;
-  return `<span class="mk-unit" style="--c:${color}"></span>`;
-}
-const VEH_GLYPH: Record<string, string> = { patrol_car: 'P', motorcycle: 'M', armoured: 'A', fire_truck: 'F', ambulance: '+', utility: 'U' };
-const vehicleHtml = (call: string, kind: string, color: string, heading: number, moving: boolean) =>
-  `<span class="mk-veh" style="--c:${color}"><span class="mk-veh-body">${VEH_GLYPH[kind] ?? 'V'}</span>${moving ? `<span class="mk-veh-dir" style="transform:rotate(${heading}deg)"></span>` : ''}<span class="mk-veh-tag">${esc(call)}</span></span>`;
 const checkpointHtml = (kind: string, state: string) => `<span class="mk-cp k-${kind} s-${state}"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 22 12 12 22 2 12Z" fill="${state === 'active' ? (kind === 'joint' ? '#7E22CE' : kind === 'community' ? '#B45309' : '#B42318') : '#fff'}" stroke="${kind === 'joint' ? '#7E22CE' : '#B42318'}" stroke-width="2.4"/></svg></span>`;
 const hospitalHtml = `<span class="mk-hosp"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="1" width="22" height="22" rx="5" fill="#fff" stroke="#D92D20" stroke-width="2"/><path d="M12 6v12M6 12h12" stroke="#D92D20" stroke-width="3.2" stroke-linecap="round"/></svg></span>`;
 
@@ -356,13 +349,13 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
         .on('click', () => setSel({ kind: 'checkpoint', id: cp.id }))
         .addTo(group);
     }
-    for (const u of data.units) L.marker([u.lat, u.lng], { icon: icon(unitHtml(u.mode, u.color, u.heading), 18, `mk${related ? ' dim' : ''}`), keyboard: false }).bindTooltip(esc(u.label)).addTo(group);
+    for (const u of data.units) L.marker([u.lat, u.lng], { icon: icon(officerMarkerHtml({ livery: liveryFor(u.org), mode: u.mode, heading: u.heading }), 30, `mk mk-offwrap${related ? ' dim' : ''}`), keyboard: false }).bindTooltip(esc(u.label)).addTo(group);
     for (const l of data.lines) L.polyline([[l.from.lat, l.from.lng], [l.to.lat, l.to.lng]], { color: '#D92D20', weight: 3, dashArray: '6 6' }).bindTooltip(esc(l.label)).addTo(group);
     if (data.line) {
       L.polyline([[data.line.officer.lat, data.line.officer.lng], [data.line.to.lat, data.line.to.lng]], { color: '#1D4ED8', weight: 3, dashArray: '6 6' }).addTo(group);
       const o = data.line.officer;
       const deg = (Math.atan2((data.line.to.lng - o.lng) * Math.cos((o.lat * Math.PI) / 180), data.line.to.lat - o.lat) * 180) / Math.PI;
-      L.marker([o.lat, o.lng], { icon: icon(unitHtml('enroute', '#1D4ED8', deg), 18), keyboard: false }).bindTooltip('Holding officer (en route)').addTo(group);
+      L.marker([o.lat, o.lng], { icon: icon(officerMarkerHtml({ livery: liveryFor(agency(focus?.agencyId)?.kind), mode: 'enroute', heading: deg }), 30, 'mk mk-offwrap'), keyboard: false }).bindTooltip('Holding officer (en route)').addTo(group);
     }
     if (data.self) L.marker([data.self.lat, data.self.lng], { icon: L.divIcon({ className: 'unit-mk self', html: '', iconSize: [18, 18] }), keyboard: false }).bindTooltip('You').addTo(group);
     // breadcrumb of the selected vehicle
@@ -386,7 +379,6 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
     for (const v of data.vehicles) {
       const target = v.caseId ? getState().incidents.find((i) => i.id === v.caseId) : undefined;
       if (target && (sel?.id === v.id || selCase === v.caseId || focus)) L.polyline([[v.lat, v.lng], [target.lat, target.lng]], { color: v.color, weight: 3, dashArray: '4 6' }).addTo(group);
-      const moving = v.status === 'patrolling' || v.status === 'responding';
       const passLink = selCase && control && canDispatch({ status: v.status, crewIds: v.crew.map((c) => c.id) } as never) ? `<a class="btn sm primary" href="#/case/${selCase}?pass=${v.id}">Pass this case to ${esc(v.callSign)}</a>` : '';
       const mine = me.role === 'supervisor' && me.agencyId === v.stationId;
       const actions = mine
@@ -397,7 +389,7 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
             : ''
         : '';
       const popup = `<div class="mp mp-veh"><b>${esc(v.callSign)}</b> <span class="tiny">${VEHICLE_KIND_LABEL[v.kind]} · ${esc(v.station)}</span><div><span class="vstatus" style="--c:${v.color}">${VEHICLE_STATUS_LABEL[v.status]}${v.statusReason ? ` — ${esc(v.statusReason)}` : ''}</span></div>${v.caseRef ? `<div>Case <a href="#/case/${v.caseId}">${esc(v.caseRef)}</a>${v.etaMin != null ? ` · ETA ${v.etaMin} min` : ''}</div>` : ''}${v.route ? `<div class="tiny">Route: ${esc(v.route)} (approximate)</div>` : ''}<div class="tiny">Crew: ${v.crew.length ? v.crew.map((c) => `${esc(c.rank ?? '')} ${esc(c.name)}`).join(', ') : 'none'}</div>${passLink}${actions}</div>`;
-      L.marker([v.lat, v.lng], { icon: icon(vehicleHtml(v.callSign, v.kind, v.color, v.heading, moving), 26, `mk mk-vwrap${v.status === 'out_of_service' ? ' oos' : ''}${dim(`vehicle:${v.id}`)}${sel?.id === v.id ? ' selected' : ''}`), keyboard: false, title: `${v.callSign} — ${VEHICLE_STATUS_LABEL[v.status]}`, zIndexOffset: 500 })
+      L.marker([v.lat, v.lng], { icon: icon(vehicleMarkerHtml({ call: v.callSign, kind: v.kind, livery: liveryFor(agency(v.stationId)?.kind), statusColor: v.color, heading: v.heading, flash: v.status === 'responding', esc }), 52, `mk mk-vwrap${v.status === 'out_of_service' ? ' oos' : ''}${dim(`vehicle:${v.id}`)}${sel?.id === v.id ? ' selected' : ''}`), keyboard: false, title: `${v.callSign} — ${VEHICLE_STATUS_LABEL[v.status]}`, zIndexOffset: 500 })
         .bindPopup(popup)
         .on('click', () => setSel({ kind: 'vehicle', id: v.id }))
         .addTo(group);
@@ -855,6 +847,11 @@ function Mark({ it }: { it: LegendItem }) {
         <b>{it.letter}</b>
       </span>
     );
+  if (it.mark === 'vehicle' && it.vkind) {
+    const html = vehicleMarkerHtml({ call: '', kind: it.vkind, livery: liveryFor(it.livery), statusColor: it.color, heading: 0, flash: it.label.startsWith('Flashing'), esc });
+    return <span className="lg-icon" aria-hidden dangerouslySetInnerHTML={{ __html: html.replace('<span class="mk-veh-tag"></span>', '') }} />;
+  }
+  if (it.mode) return <span className="lg-icon" aria-hidden dangerouslySetInnerHTML={{ __html: officerMarkerHtml({ livery: liveryFor(it.livery), mode: it.mode, heading: 45 }) }} />;
   return <span className={`lg-mark lg-${it.mark}`} style={{ ['--c' as string]: it.color }} aria-hidden />;
 }
 
