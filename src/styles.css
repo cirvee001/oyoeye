@@ -2688,31 +2688,6 @@ textarea.input {
   border-bottom: 1px dashed var(--line);
   font-size: 14px;
 }
-.map {
-  width: 100%;
-  height: auto;
-  display: block;
-  background: var(--surface-2);
-  border-radius: 10px;
-}
-.map .shape {
-  fill: color-mix(in srgb, var(--brand) 6%, var(--surface));
-  stroke: var(--line-2);
-  stroke-width: 1.2;
-}
-.map .lga-label {
-  font-size: 10px;
-  fill: var(--muted);
-}
-.map .lga-dot {
-  fill: var(--line-2);
-}
-.map .pt {
-  stroke: var(--surface);
-  stroke-width: 1.2;
-  cursor: pointer;
-}
-
 /* ---------- v2.2: stations, staff, activation ---------- */
 .ss-live {
   background: #dcfce7;
@@ -3775,4 +3750,14 @@ a.statcard:hover .sc-view { text-decoration: underline; }
 }
 @media (prefers-reduced-motion: reduce) {
   .sb-panel, .sidebar .sb-text { transition: none !important; }
+}
+
+/* Horizontal bar charts (Bars in ui.tsx). Restored: lost when styles.css was rewritten for v2. */
+.bars { display: grid; gap: 8px; }
+.bar { display: grid; grid-template-columns: minmax(120px, 220px) 1fr 44px; gap: 12px; align-items: center; font-size: 13px; }
+.bar .track { height: 10px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+.bar .fill { height: 100%; background: var(--primary); border-radius: 99px; }
+.bar .n { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+@media (max-width: 768px) {
+  .bar { grid-template-columns: minmax(90px, 130px) 1fr 36px; gap: 8px; }
 }

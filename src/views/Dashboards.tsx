@@ -4,7 +4,8 @@ import { countBy, hotspots, lastDays, metrics, securityClusters, startOfDay } fr
 import { DAY, HOUR, dur, isOpen, isOverdue } from '../platform/engine';
 import type { CategoryId, Incident } from '../platform/types';
 import { agency, cat, dep, lgaOf, persona, subLabel, useStore } from '../store';
-import { Bars, Card, CaseTable, MapView, Sev, Stat, dayTime, incidentPoints, pct, useNow } from '../ui';
+import { Bars, Card, CaseTable, Sev, Stat, dayTime, pct, useNow } from '../ui';
+import { LiveMap } from './LiveMap';
 
 const catLabel = (c: CategoryId) => cat(c).label;
 const pctChange = (x: number) => `${x >= 0 ? '+' : ''}${Math.round(x * 100)}%`;
@@ -22,7 +23,6 @@ export function SecurityPicture() {
   const clusters = securityClusters(all, at);
   const hours = Array.from({ length: 24 }, (_, h) => visible.filter((i) => lagosHour(i.createdAt) === h).length);
   const units = dep.agencies.filter((a) => a.kind === 'police' || a.kind === 'corps');
-  const recent = all.filter((i) => i.category === 'security' && !i.sensitiveOnly && i.createdAt > at - 72 * HOUR);
 
   return (
     <>
@@ -68,8 +68,8 @@ export function SecurityPicture() {
         )}
       </Card>
       <div className="grid g2">
-        <Card title="Map — last 72 hours">
-          <MapView points={incidentPoints(recent, at)} metro />
+        <Card title="Security map">
+          <LiveMap rows={sec} height={460} page="security-picture" />
         </Card>
         <div className="stack lg">
           <Card title="By type">

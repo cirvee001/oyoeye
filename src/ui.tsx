@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { MIN, clockState, distinctReporters, dur, isOpen, isOverdue, pendingHandoff } from './platform/engine';
 import type { CategoryId, Incident, Severity, Status } from './platform/types';
 import { STATUS_COLOR, STATUS_ORDER, STATUS_TONE, statusLabel, tr, type Lang } from './i18n';
-import { agency, cat, dep, handoffTarget, holderLabel, levelLabel, lgaOf, now, persona, stepOf, subLabel, useStore } from './store';
+import { agency, cat, handoffTarget, holderLabel, levelLabel, lgaOf, now, persona, stepOf, subLabel, useStore } from './store';
 import { ALERT_FLASH_MS, alertsFor } from './alerts';
 import { handoffClock } from './countdown';
 import { readPhoto } from './photo';
@@ -747,100 +747,6 @@ export function CatIcon({ c, size = 22 }: { c: CategoryId; size?: number }) {
       <Icon name={c} size={size} />
     </span>
   );
-}
-
-// ---------- map ----------
-
-export interface MapPoint {
-  id: string;
-  lat: number;
-  lng: number;
-  color: string;
-  r?: number;
-  title: string;
-  pulse?: boolean;
-  onClick?: () => void;
-}
-
-function hull(pts: [number, number][]) {
-  const p = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  const cross = (o: number[], a: number[], b: number[]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-  const lower: [number, number][] = [];
-  for (const q of p) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop();
-    lower.push(q);
-  }
-  const upper: [number, number][] = [];
-  for (const q of p.reverse()) {
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) upper.pop();
-    upper.push(q);
-  }
-  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
-}
-
-export function MapView({ points, metro: metroDefault = false, height = 380, labels = true, toggle = true }: { points: MapPoint[]; metro?: boolean; height?: number; labels?: boolean; toggle?: boolean }) {
-  const [metro, setMetro] = useState(metroDefault);
-  const b = metro ? dep.metroBounds : dep.bounds;
-  const W = 600;
-  const H = Math.round((W * (b.maxLat - b.minLat)) / (b.maxLng - b.minLng));
-  const x = (lng: number) => ((lng - b.minLng) / (b.maxLng - b.minLng)) * W;
-  const y = (lat: number) => ((b.maxLat - lat) / (b.maxLat - b.minLat)) * H;
-  const shape = useMemo(() => {
-    // Schematic outline around LGA centres (not a survey boundary).
-    const ring: [number, number][] = [];
-    for (const l of dep.lgas) for (let a = 0; a < 8; a++) ring.push([l.lng + Math.cos((a * Math.PI) / 4) * 0.16, l.lat + Math.sin((a * Math.PI) / 4) * 0.16]);
-    return hull(ring);
-  }, []);
-  const visible = points.filter((p) => p.lat >= b.minLat && p.lat <= b.maxLat && p.lng >= b.minLng && p.lng <= b.maxLng);
-  const scale = metro ? 1.25 : 1;
-  return (
-    <div className="stack" style={{ gap: 8 }}>
-      {toggle && (
-        <div className="row between">
-          <div className="seg">
-            <button className={!metro ? 'on' : ''} onClick={() => setMetro(false)}>
-              State
-            </button>
-            <button className={metro ? 'on' : ''} onClick={() => setMetro(true)}>
-              Ibadan metro
-            </button>
-          </div>
-          <span className="tiny muted">{visible.length} shown · schematic map</span>
-        </div>
-      )}
-      <svg className="map" viewBox={`0 0 ${W} ${H}`} style={{ maxHeight: height }} role="img" aria-label="Incident map">
-        <polygon className="shape" points={shape.map(([lng, lat]) => `${x(lng)},${y(lat)}`).join(' ')} />
-        {dep.lgas.map((l) => (
-          <g key={l.id}>
-            <circle className="lga-dot" cx={x(l.lng)} cy={y(l.lat)} r={2} />
-            {labels && (metro ? l.metro : !l.metro || l.id === 'ibn') && (
-              <text className="lga-label" x={x(l.lng) + 5} y={y(l.lat) - 4}>
-                {metro ? l.name : l.id === 'ibn' ? 'Ibadan' : l.name}
-              </text>
-            )}
-          </g>
-        ))}
-        {visible.map((p) => (
-          <circle key={p.id} className={`pt${p.pulse ? ' pulse' : ''}`} cx={x(p.lng)} cy={y(p.lat)} r={(p.r ?? 4) * scale} fill={p.color} fillOpacity={0.85} onClick={p.onClick}>
-            <title>{p.title}</title>
-          </circle>
-        ))}
-      </svg>
-    </div>
-  );
-}
-
-export function incidentPoints(rows: Incident[], at: number): MapPoint[] {
-  return rows.map((i) => ({
-    id: i.id,
-    lat: i.lat,
-    lng: i.lng,
-    color: SEV_COLOR[i.severity],
-    r: 3.5 + Math.min(6, Math.sqrt(i.reports.length) * 1.4),
-    title: `${i.ref} · ${subLabel(i.category, i.subcategory)} · ${i.area}${isOverdue(i, at) ? ' · OVERDUE' : ''}`,
-    pulse: i.status === 'pending' && i.severity === 'critical',
-    onClick: () => go(`/case/${i.id}`),
-  }));
 }
 
 export { cat };
