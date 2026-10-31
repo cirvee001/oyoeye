@@ -2170,7 +2170,12 @@ function raiseOfficerSos(at: number, officer: Person, kind: 'distress' | 'missed
   applyDeadlines(i);
   state.incidents.unshift(i);
   audit(at, kind === 'missed' ? SYSTEM : officer, kind === 'missed' ? 'Missed check-in — Officer SOS' : 'Officer SOS raised', `${officer.name}${silent ? ' (silent)' : ''} near ${area}, ${lga.name}${linked ? ` · linked to ${linked.ref}` : ''}. This is an alert, not an allegation: units alerted at once.`, i.id);
-  const near = nearestUnits(pos.lat, pos.lng, 3, at, officer.id);
+  // The officer's own station is always asked (if it is a live security unit), then the nearest
+  // others up to 3. Without this, whether colleagues are alerted depended on where patrols were.
+  const ranked = nearestUnits(pos.lat, pos.lng, 4, at, officer.id);
+  const ownStation = officer.agencyId && agency(officer.agencyId);
+  const own = ownStation && isLive(ownStation) && SECURITY_RESPONDERS.includes(ownStation.kind) ? ranked.find((u) => u.agencyId === officer.agencyId) ?? { agencyId: officer.agencyId!, km: km(stationPoint(officer.agencyId!).lat, stationPoint(officer.agencyId!).lng, pos.lat, pos.lng) } : undefined;
+  const near = own ? [own, ...ranked.filter((u) => u.agencyId !== own.agencyId)].slice(0, 3) : ranked.slice(0, 3);
   i.officerSos!.responses = near.map((u) => ({ agencyId: u.agencyId, km: Math.round(u.km * 10) / 10, status: 'asked', vehicleId: u.vehicleId }));
   for (const u of near) {
     const who = agencyManagers(dep, u.agencyId, onDuty).map((p) => p.id);

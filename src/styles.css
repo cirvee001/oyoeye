@@ -3721,3 +3721,14 @@ a.statcard:hover .sc-view { text-decoration: underline; }
 @media (prefers-reduced-motion: reduce) {
   .leaflet-marker-icon { transition: none !important; }
 }
+
+/* Incident hover card on the map */
+.leaflet-tooltip.mp-tip { padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); box-shadow: var(--shadow); white-space: normal; width: 220px; font: 12.5px/1.4 system-ui, sans-serif; color: var(--ink, #101828); }
+.mp-tip .tip { display: grid; gap: 3px; }
+.mp-tip .tip b { font-size: 13.5px; }
+.mp-tip .tip-sub { color: #475467; }
+.mp-tip .tip-row { display: flex; align-items: center; gap: 8px; }
+.mp-tip .tip-pri { font-weight: 600; color: #344054; }
+.mp-tip .tip-flag { justify-self: start; font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: #FFF4D6; color: #8A6100; }
+.mp-tip .tip-flag.hot { background: #FEE4E2; color: #B42318; }
+.mp-tip .tip-ref { font-size: 11px; color: #667085; }

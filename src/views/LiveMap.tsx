@@ -30,15 +30,24 @@ import {
   type Layer,
   type LegendItem,
   type LegendSection,
+  type Pin,
   type TimeWin,
 } from '../mapdata';
 import { VEHICLE_KIND_LABEL, VEHICLE_STATUS_COLOR, VEHICLE_STATUS_LABEL, canDispatch } from '../fleet';
-import { fmtTimeWat } from '../format';
+import { fmtAgo, fmtTimeWat } from '../format';
 import { roleKind } from '../roles';
 import { agency, controlRoom, dep, fleet, getState, isControl, isManagerOf, lgaOf, now, persona, resetMapView, saveMapView, setMapPrefs, useStore } from '../store';
 import { Icon, Sheet, run, useNow } from '../ui';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+/** Hover card for an incident pin. Restricted cases show only that they exist and their LGA. */
+function pinTip(p: Pin, at: number) {
+  if (p.kind === 'restricted') return `<div class="tip"><b>Restricted case</b><div class="tip-sub">${esc(p.place)} · approximate location</div></div>`;
+  const flag = p.flag ? `<div class="tip-flag${/SOS|overdue|Overdue/.test(p.flag) ? ' hot' : ''}">${esc(p.flag)}</div>` : '';
+  const reports = p.reports > 1 ? ` · reported by ${p.reports} people` : '';
+  return `<div class="tip">${flag}<b>${esc(p.type)}</b><div class="tip-sub">${esc(p.place)}</div><div class="tip-row"><span class="pill ${p.tone}">${esc(p.status)}</span><span class="tip-pri">${esc(p.priority)}</span></div><div class="tip-sub">${esc(fmtAgo(p.createdAt, at))}${reports}</div><div class="tip-sub">With: ${esc(p.holder)}</div><div class="tip-ref mono">${esc(p.ref)} · click for details</div></div>`;
+}
 
 export interface LiveMapProps {
   /** Incidents to plot (already filtered by the page: tab, filter, search). */
@@ -134,7 +143,7 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
   const data = useMemo(() => {
     const ctx = focus ? [] : recent(context ?? rows, win, at);
     const sosOnly = layers.has('sos') && !focus;
-    const pins = layers.has('incidents') || focus || sosOnly ? incidentPins(me, sosOnly ? shown.filter((i) => i.reports[0]?.channel === 'sos' || !!i.officerSos) : shown) : [];
+    const pins = layers.has('incidents') || focus || sosOnly ? incidentPins(me, sosOnly ? shown.filter((i) => i.reports[0]?.channel === 'sos' || !!i.officerSos) : shown, at) : [];
     const vehicles = !res ? [] : focus ? res.vehicles.filter((v) => v.caseId === focus.id) : layers.has('vehicles') ? res.vehicles.filter((v) => !vfilter || v.status === vfilter) : [];
     return {
       pins,
@@ -364,7 +373,7 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
       const extra = p.pulse ? ' mk-pulse' : '';
       L.marker([p.lat, p.lng], { icon: icon(pinHtml(p.shape, p.color, px), px + 6, `mk${extra}${dim(`case:${p.caseId}`)}`), alt: p.kind === 'restricted' ? 'Restricted case' : `${p.ref} ${p.status}` })
         .bindPopup(popup)
-        .bindTooltip(p.kind === 'restricted' ? 'Restricted (approximate location)' : esc(p.ref))
+        .bindTooltip(pinTip(p, at), { direction: 'top', offset: [0, -px / 2 - 4], className: 'mp-tip', opacity: 1 })
         .on('click', () => setSel({ kind: 'case', id: p.caseId }))
         .addTo(group);
     }

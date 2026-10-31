@@ -1,4 +1,5 @@
-import { DAY, HOUR, isOpen, km } from './platform/engine';
+import { DAY, HOUR, isOpen, isOverdue, km } from './platform/engine';
+import { handoffClock } from './countdown';
 import type { Checkpoint, Hospital, Incident, PatrolRoute, Person, Vehicle, VehicleStatus } from './platform/types';
 import { HOSPITALS, ROUTES, VEHICLE_STATUSES, VEHICLE_STATUS_COLOR, VEHICLE_STATUS_LABEL, breadcrumb, vehiclePosition } from './fleet';
 import { SIDE_STATUSES, STATUS_COLOR, STATUS_ORDER, STATUS_TONE, statusLabel } from './i18n';
@@ -72,12 +73,31 @@ export interface Pin {
   status: string;
   tone: string;
   holder: string;
+  /** Hover card: place (LGA only when restricted), priority, age, report count and the most urgent flag. */
+  place: string;
+  priority: string;
+  createdAt: number;
+  reports: number;
+  flag?: string;
 }
 
 const SIZE = { critical: 9, high: 7, normal: 6, low: 5 };
 
+const PRIORITY_WORD = { critical: 'Critical', high: 'High', normal: 'Normal', low: 'Low' };
+
+/** The one flag worth a glance on hover, most urgent first. */
+function pinFlag(i: Incident, sos: boolean, at: number): string | undefined {
+  if (i.officerSos && isOpen(i)) return 'Officer SOS';
+  if (sos) return 'SOS';
+  const h = handoffClock(i, at);
+  if (h) return h.tone === 'red' ? h.overdueText ?? 'Handoff overdue' : `Waiting to be accepted · ${h.short}`;
+  if (isOverdue(i, at)) return 'Overdue';
+  if (isOpen(i) && i.escalationLevel > 1) return `Escalated · level ${i.escalationLevel}`;
+  return undefined;
+}
+
 /** Incident pins after the privacy rules. The chairman gets no security points at all. */
-export function incidentPins(me: Person, rows: Incident[]): Pin[] {
+export function incidentPins(me: Person, rows: Incident[], at = now()): Pin[] {
   const out: Pin[] = [];
   for (const i of rows) {
     if (me.role === 'chairman' && i.restricted) continue; // counts only (see countBubbles)
@@ -100,6 +120,12 @@ export function incidentPins(me: Person, rows: Incident[]): Pin[] {
       tone: STATUS_TONE[i.status],
       // Popups never carry reporter information, for anyone.
       holder: restricted ? '—' : holderLabel(i),
+      // Restricted cases show only their LGA, never the area.
+      place: restricted ? lgaOf(i.lgaId).name : `${i.area}, ${lgaOf(i.lgaId).name}`,
+      priority: PRIORITY_WORD[i.severity],
+      createdAt: i.createdAt,
+      reports: restricted ? 0 : i.reports.length,
+      flag: restricted ? undefined : pinFlag(i, sos, at),
     });
   }
   return out;
