@@ -311,6 +311,16 @@ export const STRINGS = {
   // sign-in
   'si.tag': ['See it. Report it. Act on it.', 'Rí i. Ròyìn rẹ̀. Ṣe nǹkan nípa rẹ̀.'],
   'si.sub': ['Oyo State · 615 Security & Emergency. Citizens report; the right unit responds; everyone sees where each case is.', 'Ìpínlẹ̀ Ọ̀yọ́ · 615 Ààbò àti Pàjáwìrì. Aráàlú ń ròyìn; ẹ̀ka tó yẹ ń dáhùn; gbogbo ènìyàn ń rí ibi tí ọ̀rọ̀ kọ̀ọ̀kan dé.'],
+  // DRAFT — needs native-speaker review (sign-in banner)
+  'si.state': ['Oyo State', 'Ìpínlẹ̀ Ọ̀yọ́'],
+  'si.headline1': ['See it.', 'Rí i.'],
+  'si.headline2': ['Tell Seyi.', 'Sọ fún Seyi.'],
+  'si.lede': ['Report danger or a problem in your area. The 615 control room checks it and sends the right unit — and you can follow every step.', 'Ròyìn ewu tàbí ìṣòro ní agbègbè yín. Yàrá ìṣàkóso 615 máa ṣàyẹ̀wò rẹ̀, á sì rán ẹ̀ka tó yẹ — ẹ ó sì lè tẹ̀lé gbogbo ìgbésẹ̀.'],
+  'si.trust.free': ['Help is free — never pay', 'Ìrànlọ́wọ́ jẹ́ ọ̀fẹ́ — ẹ má sanwó'],
+  'si.trust.anon': ['Report anonymously if you prefer', 'Ẹ lè ròyìn láìsí orúkọ'],
+  'si.trust.615': ['Answered by the 615 control room', 'Yàrá ìṣàkóso 615 ló ń dáhùn'],
+  'si.art': ['Reports from across Oyo reach the 615 control room, which sends the nearest unit.', 'Ìròyìn láti gbogbo Ọ̀yọ́ ń dé yàrá ìṣàkóso 615, tó ń rán ẹ̀ka tó súnmọ́ jùlọ.'],
+  'si.art.center': ['615 CONTROL ROOM', 'YÀRÁ ÌṢÀKÓSO 615'],
   'si.sos': ['Report an emergency now — no sign-in', 'Ròyìn pàjáwìrì báyìí — láìwọlé'],
   'si.anon': ['Report a problem anonymously →', 'Ròyìn ìṣòro láìsí orúkọ →'],
   'si.public': ['Public dashboard', 'Àkójọ gbangba'],

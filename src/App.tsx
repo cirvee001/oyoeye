@@ -250,7 +250,7 @@ export function App() {
         {!bare && (
           <header className="topbar pub">
             <a href="#/signin" className="brand-sm">
-              <Eye size={30} /> <b>Tell Seyi</b>
+              <Logo size={30} /> <b>Tell Seyi</b>
             </a>
             <div className="spacer" />
             {head !== "ussd" && head !== "public" && <LangToggle />}
@@ -575,7 +575,7 @@ function Shell({
       <aside className="sidebar">
         <div className="sb-panel">
           <a className="sb-logo" href="#/">
-            <Eye size={34} />
+            <Logo size={34} />
             <span className="sb-text">
               <b>Tell Seyi</b>
               <small>{dep.state} State</small>
@@ -684,7 +684,7 @@ function TopBar({
             }
           }}
         >
-          <Eye size={30} />
+          <Logo size={30} />
         </a>
       )}
       <h1 className="tb-title">{title}</h1>
@@ -876,16 +876,24 @@ function DemoControls({ onSwitch }: { onSwitch: () => void }) {
   );
 }
 
-export function Eye({ size = 30 }: { size?: number }) {
+/**
+ * Tell Seyi mark: a shield (security) holding a speech bubble (tell us): "safe to speak".
+ * `inverse` is the white version for green or dark backgrounds.
+ */
+export function Logo({ size = 30, inverse = false }: { size?: number; inverse?: boolean }) {
+  const shield = inverse ? '#FFFFFF' : '#0B6E4F';
+  const bubble = inverse ? '#0B6E4F' : '#FFFFFF';
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
-      <rect width="32" height="32" rx="8" fill="#0B6E4F" />
-      <path
-        d="M4 16c3-5.5 7.3-8 12-8s9 2.5 12 8c-3 5.5-7.3 8-12 8S7 21.5 4 16Z"
-        fill="#fff"
-      />
-      <circle cx="16" cy="16" r="4.6" fill="#0c1a13" />
-      <circle cx="17.6" cy="14.4" r="1.4" fill="#fff" />
+    <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden className="logo-mark">
+      <path d="M32 4 54 12v17c0 15-9.5 25.5-22 31C19.5 54.5 10 44 10 29V12z" fill={shield} />
+      <path d="M23 19h18a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4h-8l-6 5v-5h-4a4 4 0 0 1-4-4V23a4 4 0 0 1 4-4z" fill={bubble} />
+      {size >= 24 && (
+        <>
+          <circle cx="26.5" cy="28" r="2" fill={shield} />
+          <circle cx="32" cy="28" r="2" fill={shield} />
+          <circle cx="37.5" cy="28" r="2" fill={shield} />
+        </>
+      )}
     </svg>
   );
 }

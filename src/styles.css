@@ -3761,3 +3761,33 @@ a.statcard:hover .sc-view { text-decoration: underline; }
 @media (max-width: 768px) {
   .bar { grid-template-columns: minmax(90px, 130px) 1fr 36px; gap: 8px; }
 }
+
+/* ---------- Sign-in banner (Tell Seyi): picture first, few words ---------- */
+.auth-brand {
+  position: sticky;
+  top: 0;
+  overflow: hidden;
+  justify-content: flex-start;
+  gap: 18px;
+  padding: 36px 48px 28px;
+  height: 100vh;
+  min-height: 0;
+  background:
+    radial-gradient(700px 420px at 75% 20%, rgba(166, 244, 197, 0.12), transparent 60%),
+    linear-gradient(180deg, #0a6248 0%, #0b6e4f 45%, #075c41 100%);
+}
+.ab-top { display: flex; align-items: center; gap: 12px; }
+.ab-name { display: block; font-size: 22px; font-weight: 800; letter-spacing: -0.01em; color: #fff; }
+.ab-top small { color: #c7ead9; font-size: 13px; }
+/* the picture takes all the room that is left, and shrinks before anything else does */
+.ab-art { flex: 1 1 0; min-height: 160px; width: calc(100% + 96px); margin: 0 -48px; height: auto; display: block; }
+.ab-headline { margin: 0; font-size: clamp(36px, 3.6vw, 54px); line-height: 1.02; font-weight: 800; letter-spacing: -0.03em; color: #fff; }
+.ab-accent { color: #a6f4c5; }
+.ab-actions { display: grid; gap: 10px; max-width: 460px; }
+.ab-foot { margin-top: 2px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.16); gap: 4px 18px; }
+@media (max-width: 900px) {
+  .auth-brand { position: static; height: auto; padding: 24px 20px 20px; gap: 14px; }
+  /* phones: the whole picture at its natural shape, so the shield at the top is never cropped */
+  .ab-art { flex: none; width: calc(100% + 40px); margin: 0 -20px; height: auto; aspect-ratio: 600 / 420; min-height: 0; }
+  .ab-headline { font-size: 34px; }
+}
