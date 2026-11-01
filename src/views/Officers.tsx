@@ -2,10 +2,12 @@ import { PHONE_HINT } from '../format';
 import { lagosIsoDate } from '../format';
 import { useState } from 'react';
 import { isActive, isLive, isOpen, pendingHandoff } from '../platform/engine';
-import type { Person, Shift, StationRole } from '../platform/types';
+import type { OutOfServiceReason, Person, Shift, StationRole } from '../platform/types';
+import { ROUTES, VEHICLE_KIND_LABEL, VEHICLE_STATUS_COLOR, VEHICLE_STATUS_LABEL, vehiclePosition } from '../fleet';
+import { fleet } from '../store';
 import { actions, agency, canDecide, canManageStation, dep, lgaOf, onboarding, org, persona, setDuty, subLabel, useStore, validPhone } from '../store';
 import { initials } from '../roles';
-import { Card, Chips, CountTitle, Icon, Priority, Sheet, StatusPill, Tabs, run } from '../ui';
+import { Card, Chips, CountTitle, Icon, Priority, Sheet, StatusPill, Tabs, run, useNow, useQuery } from '../ui';
 import { FocalList } from './Community';
 import { safety } from '../store';
 import { StaffStatus } from './Stations';
@@ -18,12 +20,140 @@ type Modal = { kind: 'assign' | 'transfer' | 'suspend' | 'deactivate' | 'lost'; 
 /** "My officers": invite, roster, transfer, suspend, deactivate (PRD v2.2 §4.3). */
 /** "My officers" with tabs Officers · Community (v2.3 §6). */
 export function Officers() {
-  const [tab, setTab] = useState<'officers' | 'community'>('officers');
+  const q = useQuery().get('tab');
+  const me = persona();
+  const fleetUnit = ['police', 'corps', 'emergency'].includes(agency(me.agencyId)?.kind ?? '');
+  const [tab, setTab] = useState<'officers' | 'vehicles' | 'community'>(q === 'vehicles' && fleetUnit ? 'vehicles' : q === 'community' ? 'community' : 'officers');
   return (
     <>
-      <Tabs<'officers' | 'community'> tabs={[{ id: 'officers', label: 'Officers' }, { id: 'community', label: 'Community' }]} value={tab} onChange={setTab} />
-      {tab === 'officers' ? <OfficersList /> : <FocalList />}
+      <Tabs<'officers' | 'vehicles' | 'community'> tabs={[{ id: 'officers', label: 'Officers' }, ...(fleetUnit ? [{ id: 'vehicles' as const, label: 'Vehicles' }] : []), { id: 'community', label: 'Community' }]} value={tab} onChange={setTab} />
+      {tab === 'officers' ? <OfficersList /> : tab === 'vehicles' ? <VehiclesTab /> : <FocalList />}
     </>
+  );
+}
+
+const OOS: OutOfServiceReason[] = ['No fuel', 'Under repair', 'No crew', 'Accident'];
+/** My officers → Vehicles (PRD v2.8 §2.1): status, crew and patrol route; every change is audited. */
+function VehiclesTab() {
+  const me = persona();
+  const vehicles = useStore((s) => s.vehicles).filter((v) => v.stationId === me.agencyId);
+  const at = useNow(15_000);
+  const incidents = useStore((s) => s.incidents);
+  const [crewFor, setCrewFor] = useState<string>();
+  const [oosFor, setOosFor] = useState<string>();
+  const routes = ROUTES.filter((r) => r.stationId === me.agencyId);
+  const avail = vehicles.filter((v) => v.status === 'available' || v.status === 'patrolling').length;
+  return (
+    <section className="card worklist">
+      <div className="wl-head">
+        <h2>
+          <CountTitle title="Vehicles" n={vehicles.length} />
+        </h2>
+        <span className="small muted">{`${avail} of ${vehicles.length} available · ${vehicles.filter((v) => v.status === 'out_of_service').length} out of service`}</span>
+        <a className="btn" href="#/cases?view=map">
+          <Icon name="pin" size={16} /> On the map
+        </a>
+      </div>
+      {!vehicles.length ? (
+        <div className="empty">This station has no vehicles on Tell Seyi yet.</div>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Call sign</th>
+                <th>Kind</th>
+                <th>Status</th>
+                <th>Crew</th>
+                <th>Patrol route</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {vehicles.map((v) => {
+                const pos = vehiclePosition(v, at, incidents);
+                const c = incidents.find((i) => i.id === v.caseId);
+                return (
+                  <tr key={v.id}>
+                    <td className="mono strong">{v.callSign}</td>
+                    <td className="small">{VEHICLE_KIND_LABEL[v.kind]}</td>
+                    <td>
+                      <span className="vstatus" style={{ ['--c' as string]: VEHICLE_STATUS_COLOR[v.status] }}>
+                        {VEHICLE_STATUS_LABEL[v.status]}
+                      </span>
+                      <div className="tiny muted">{v.statusReason ?? (c ? `${c.ref}${pos.etaMin != null && v.status === 'responding' ? ` · ETA ${pos.etaMin} min` : ''}` : '')}</div>
+                    </td>
+                    <td className="small">{v.crewIds.map((id) => dep.people.find((p) => p.id === id)?.name).join(', ') || '—'}</td>
+                    <td>
+                      <select className="input" value={v.routeId ?? ''} onChange={(e) => run(fleet.setRoute(v.id, e.target.value || undefined), 'Route updated.')} aria-label={`Patrol route for ${v.callSign}`} disabled={v.status === 'responding' || v.status === 'onscene'}>
+                        <option value="">No route (parked)</option>
+                        {routes.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="nowrap">
+                      {v.status === 'out_of_service' ? (
+                        <button className="btn sm primary" onClick={() => run(fleet.backInService(v.id), `${v.callSign} back in service.`)}>
+                          Back in service
+                        </button>
+                      ) : (
+                        <button className="btn sm" onClick={() => setOosFor(v.id)} disabled={v.status === 'responding' || v.status === 'onscene'}>
+                          Out of service
+                        </button>
+                      )}
+                      <button className="btn sm" onClick={() => setCrewFor(v.id)}>
+                        Change crew
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {oosFor && (
+        <Sheet title={`Out of service — ${vehicles.find((v) => v.id === oosFor)?.callSign}`} onClose={() => setOosFor(undefined)}>
+          <div className="stack lg">
+            <p className="small muted">The station chat is told. It is never suggested for dispatch until it is back in service.</p>
+            <div className="opts">
+              {OOS.map((r) => (
+                <button key={r} className="btn lg block" onClick={() => run(fleet.outOfService(oosFor, r), `Marked out of service — ${r.toLowerCase()}.`) && setOosFor(undefined)}>
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+        </Sheet>
+      )}
+      {crewFor && <CrewSheet vehicleId={crewFor} onClose={() => setCrewFor(undefined)} />}
+    </section>
+  );
+}
+
+function CrewSheet({ vehicleId, onClose }: { vehicleId: string; onClose: () => void }) {
+  const v = useStore((s) => s.vehicles).find((x) => x.id === vehicleId)!;
+  const [crew, setCrew] = useState<string[]>(v.crewIds);
+  const officers = dep.people.filter((p) => p.agencyId === v.stationId && p.role === 'officer' && (p.staffStatus ?? 'active') === 'active');
+  return (
+    <Sheet title={`Crew — ${v.callSign}`} onClose={onClose}>
+      <div className="stack lg">
+        <p className="small muted">Officers in a crew move with the vehicle on the map. Choosing someone takes them off their other vehicle.</p>
+        <div className="opts">
+          {officers.map((p) => (
+            <label key={p.id} className={`pick${crew.includes(p.id) ? ' on' : ''}`}>
+              <input type="checkbox" checked={crew.includes(p.id)} onChange={(e) => setCrew(e.target.checked ? [...crew, p.id] : crew.filter((x) => x !== p.id))} /> {`${p.rank ?? ''} ${p.name}`}
+            </label>
+          ))}
+        </div>
+        <button className="btn primary lg block" onClick={() => run(fleet.setCrew(v.id, crew), 'Crew updated.') && onClose()}>
+          Save crew
+        </button>
+      </div>
+    </Sheet>
   );
 }
 

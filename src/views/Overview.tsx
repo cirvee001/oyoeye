@@ -76,7 +76,8 @@ export function Overview() {
     <>
       <div className="page-title">
         <h1>
-          Welcome, {me.name.split(' ').filter((w) => !/\.$|^\(/.test(w))[0] ?? me.name}
+          {/* An office account (e.g. "Governor's Office") is greeted by its full name, a person by first name */}
+          Welcome, {me.role === 'executive' ? me.name : me.name.split(' ').filter((w) => !/\.$|^\(/.test(w))[0] ?? me.name}
         </h1>
         <p className="muted">
           {`${roleName(me)} · ${fmtLong(at)}`}
@@ -89,7 +90,7 @@ export function Overview() {
       </div>
       {(kind === 'coord' || kind === 'gov') && (
         <Card title="Security map" right={<span className="small muted">Live · simulated unit positions</span>}>
-          <LiveMap rows={scope.filter((i) => i.restricted || isOpen(i))} />
+          <LiveMap rows={scope.filter((i) => i.restricted || isOpen(i))} panel />
         </Card>
       )}
       {(kind === 'commander' || kind === 'agency') && <ConductCard agencyId={me.agencyId!} />}

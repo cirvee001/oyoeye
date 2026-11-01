@@ -24,9 +24,9 @@ export function credibility(i: Incident, all: Incident[]) {
   // v2.4: reporter standing (only duty-lead-confirmed hoaxes in the last 12 months count).
   const sd = standingOfReport(getState(), i);
   if (sd && !i.officerSos) {
-    if (sd.level === 'restricted') out.unshift({ tone: 'bad', text: `⛔ Restricted reporter — call back before verifying (${sd.hoaxes.length} hoaxes in 12 months)${i.callback ? ` · call-back: ${i.callback.result === 'reached' ? 'reached' : "couldn't reach"}` : ''}` });
-    else if (sd.level === 'review') out.push({ tone: 'warn', text: '⚠ Reporter standing: Under review (1 deliberate false alarm in 12 months) — normal handling' });
-    else if (sd.level === 'trusted') out.push({ tone: 'good', text: `★ Reporter standing: Trusted — ${sd.confirmed} of ${sd.closed} reports confirmed` });
+    if (sd.level === 'restricted') out.unshift({ tone: 'bad', text: `⛔ Restricted reporter — call back before verifying (${sd.hoaxes.length} hoaxes in 12 months) · score ${sd.score.toFixed(1)}/10${i.callback ? ` · call-back: ${i.callback.result === 'reached' ? 'reached' : "couldn't reach"}` : ''}` });
+    else if (sd.level === 'review') out.push({ tone: 'warn', text: `⚠ Reporter score ${sd.score.toFixed(1)}/10 · Under review (${sd.hoaxes.length} deliberate false alarm${sd.hoaxes.length === 1 ? '' : 's'} in 12 months) — normal handling` });
+    else if (sd.level === 'trusted') out.push({ tone: 'good', text: `★ Reporter score ${sd.score.toFixed(1)}/10 · Trusted — ${sd.confirmed} of ${sd.closed} reports confirmed` });
     else out.push({ tone: '', text: `Reporter standing: ${sd.label}` });
   }
   if (i.officerSos) out.unshift({ tone: 'good', text: 'Officer SOS from a verified, signed-in officer — an alert, not an allegation' });

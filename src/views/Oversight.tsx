@@ -1,3 +1,4 @@
+import { checkpointNear } from '../store';
 import { useState } from 'react';
 import type { Complaint, ComplaintStatus } from '../platform/types';
 import { agency, complainantUnsealed, decideAppeal, lgaOf, oversight, person, persona, standingFor, subLabel, useStore } from '../store';
@@ -133,6 +134,7 @@ export function ComplaintPage({ id }: { id: string }) {
       </section>
       <Card title="The complaint">
         <p>{c.text}</p>
+        {i && checkpointNear(i.lat, i.lng) && <div className="notice warn small near-cp">{`Near checkpoint: ${checkpointNear(i.lat, i.lng)!.name}`}</div>}
         <div className="inforow" style={{ marginTop: 14 }}>
           <div>
             <div className="ir-label">Unit</div>

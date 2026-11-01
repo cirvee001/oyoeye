@@ -246,7 +246,7 @@ function ImportStations({ onClose }: { onClose: () => void }) {
           One row per station. Columns: <span className="mono">{CSV_HEADER}</span>. Separate several LGAs with “;”.
         </p>
         <div className="row">
-          <a className="btn" href={template} download="oyoeye-stations-template.csv">
+          <a className="btn" href={template} download="tellseyi-stations-template.csv">
             <Icon name="download" size={16} /> Download CSV template
           </a>
           <button className="btn" onClick={() => fileRef.current?.click()}>
@@ -473,14 +473,14 @@ function LoneSetting() {
 }
 
 const NOTICE_LABEL: Record<string, string> = { armed: 'Armed persons / shooting', robbery: 'Robbery', kidnapping: 'Kidnapping', violence: 'Violence / clash', suspicious: 'Suspicious activity', threat: 'Threats / extortion', sos: 'SOS' };
-const NOTICE_SAMPLE = 'OyoEye 615: A security incident has been reported in <area>. Response units have been dispatched. Please keep calm and report anything you see to 615.';
+const NOTICE_SAMPLE = 'Tell Seyi 615: A security incident has been reported in <area>. Response units have been dispatched. Please keep calm and report anything you see to 615.';
 
 function NoticeRules() {
   const rules = useStore((s) => s.noticeRules);
   return (
     <div className="stack lg">
       <p className="small muted">
-        When an operator verifies a <b>High</b> or <b>Critical</b> security case in a traditional ruler's area, OyoEye sends them an SMS: “{NOTICE_SAMPLE}” It never names the type, the people or the reporter.
+        When an operator verifies a <b>High</b> or <b>Critical</b> security case in a traditional ruler's area, Tell Seyi sends them an SMS: “{NOTICE_SAMPLE}” It never names the type, the people or the reporter.
       </p>
       <Card title="Send notices for" pad={false}>
         <div className="table-wrap">

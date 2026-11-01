@@ -36,7 +36,7 @@ export function Activate({ onCancel }: { onCancel: () => void }) {
       {step === 1 && (
         <>
           <h3>Activate my account</h3>
-          <p className="small muted">Your commander added you to OyoEye. Enter your phone number and the 6-digit code from the SMS.</p>
+          <p className="small muted">Your commander added you to Tell Seyi. Enter your phone number and the 6-digit code from the SMS.</p>
           <label className="field">
             <span>Phone number</span>
             <input className="input lg" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0803 000 0099" />

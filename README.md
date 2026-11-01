@@ -1,4 +1,4 @@
-# OyoEye v2 — prototype
+# Tell Seyi (formerly OyoEye) v2 — prototype
 
 Citizen reporting, response and accountability for Oyo State, security first.
 **A citizen asks for help, the case moves from person to person, everyone sees its
@@ -11,8 +11,26 @@ onboarding & chat addendum [`docs/PRD-v2.2-onboarding-chat.md`](docs/PRD-v2.2-on
 map / community / conduct / officer-safety addendum [`docs/PRD-v2.3-map-community-conduct-safety.md`](docs/PRD-v2.3-map-community-conduct-safety.md).
 
 **Live map (v2.3).** Leaflet with OpenStreetMap tiles ("© OpenStreetMap contributors"), loaded only
-in the browser. If no tile arrives within 4 s it switches to a plain grey base with LGA labels and
-the banner "Map tiles unavailable — showing positions only". Station coverage is drawn as
+in the browser. The free OSM tile servers can be slow from Nigeria or on weak Wi-Fi: if no tile has
+arrived after 8 s (while the map is visible) it shows LGA labels and a "showing positions only"
+banner with a Retry button, but keeps trying — the background appears as soon as a tile loads, and
+again when the connection comes back. For production, host tiles or use a paid tile provider.
+
+**Offline Oyo map (recommended for presentations).** If `public/tiles/oyo.pmtiles` exists, the map
+is drawn from that file inside the app (Protomaps, OpenStreetMap data), so it needs no internet and
+can't be broken by venue Wi-Fi. Without the file, the map uses online OSM tiles as above. The map
+footer says which one is in use ("offline Oyo map"). To build the file once:
+
+1. Download the `pmtiles` tool for Windows from
+   [github.com/protomaps/go-pmtiles/releases](https://github.com/protomaps/go-pmtiles/releases)
+   (`go-pmtiles_<version>_Windows_x86_64.zip`), unzip it, and put `pmtiles.exe` on your PATH
+   (or set the `PMTILES` environment variable to the full path of `pmtiles.exe`).
+2. Run `npm run map:oyo`. It downloads only Oyo State plus a margin (zoom 0–13, about 18 MB) from the latest daily
+   Protomaps build and writes `public/tiles/oyo.pmtiles`.
+3. Reload the app.
+
+Never bulk-download tiles from tile.openstreetmap.org instead: its usage policy forbids it.
+Station coverage is drawn as
 approximate circles around LGA centroids (no real boundaries). Officer positions are simulated
 from the demo clock.
 
@@ -98,7 +116,7 @@ on the case timeline.
    and confirm"). Note the reference. Footer → **Track a report** with it: *Pending review*, with
    "Pending review — the 615 control room will check your report soon".
 2. **615 Operator (OY-615-001).** The SOS arrives with a **two-tone chime**, a toast "SOS — Agbowo,
-   Ibadan North · Open", the tab title "(1) SOS — OyoEye", and a **flashing red row** first on
+   Ibadan North · Open", the tab title "(1) SOS — Tell Seyi", and a **flashing red row** first on
    *Cases → Pending review*. The chime repeats every 30 s until someone opens it. Press **View**:
    the sound stops (for every operator), the row is no longer tinted. The speaker in the top bar has
    **Mute for 15 min** (audited); if the browser blocked sound, click the "Click to enable alert
@@ -231,7 +249,7 @@ messages. Normal messages only raise the Chat unread count; urgent messages, bro
 25. **New citizen onboarding.** Sign out → Citizen tab → **0803 000 0500**, code 123456, first name
     "Kunle" → switch to **YO** in the top-right during onboarding → 4 onboarding cards → the 8 rules →
     **Mo yé mi, mo sì gbà** → Home stays in Yorùbá with the **Tuntun** (New) standing. Report
-    something with *Standard* identity: the confirmation SMS in the outbox is in Yorùbá ("OyoEye
+    something with *Standard* identity: the confirmation SMS in the outbox is in Yorùbá ("Tell Seyi
     OY-…: A ti gba ìròyìn yín…"). Sign out and in again: still YO. The audit log shows "Accepted Rule Book v1". (The red "In danger now? SOS" button is
     on every onboarding screen — onboarding never blocks SOS.)
 26. **Anonymous summary.** Signed out → "Report a problem anonymously": the 3-rule summary, then
@@ -241,7 +259,7 @@ messages. Normal messages only raise the Chat unread count; urgent messages, bro
     / hoax** with a reason of at least 20 characters. The duty lead opens it → **Confirm hoax** (or
     "Not a hoax — no penalty"). The reporter's standing card now says **Under review**, why, until
     when, and offers **Appeal**. The other reasons (No trace found, Duplicate, Not a matter for
-    OyoEye, Genuine mistake) never count.
+    Tell Seyi, Genuine mistake) never count.
 28. **Restricted reporter and appeal.** Operator → Bose's pending report: the credibility card says
     "⛔ Restricted reporter — call back before verifying (2 hoaxes in 12 months)" and **Verify & pass**
     first asks **Have you called back?** (Yes / Couldn't reach). Barr. Adeyemi → *Complaints* → the
@@ -307,6 +325,33 @@ messages. Normal messages only raise the Chat unread count; urgent messages, bro
   and assertive SOS announcements, text labels and in-text errors on forms, AA contrast for status
   pills and grey text, and `prefers-reduced-motion` (no pulses, markers jump, no slide-ins).
 
+### Operational map (steps 29–32, PRD v2.8)
+
+29. **Operational map.** Duty lead → *Cases* → **Map**. It opens on the **Dark** base (OpenStreetMap with a dark filter; Standard and Light are in
+    **Layers**, top right). In Layers turn on **Patrol vehicles**, **Checkpoints** and **Patrol routes**. The
+    **Resources** panel on the left says "Vehicles: … available · … patrolling · … responding · … on scene · 5 out of
+    service" — click a part to filter the map. Type "Police Ibarapa" in its search and press Enter: 2 of its 3 vehicles
+    are out of service (no fuel, under repair) and its marker shows the amber warning. Press **+15m**: patrolling
+    vehicles move along their (approximate) routes; IWO-P1 and AMO-IB-1 are already responding to seeded cases.
+30. **Dispatch from the map.** Raise a new SOS (citizen, Agbowo). The operator opens **Verify & pass**: "Nearest
+    available vehicles", e.g. "BDJ-P1 · Police Bodija · Patrolling · 1.2 km · 2 min" (out-of-service vehicles are
+    never offered; "(2 nearer vehicles out of service)" shows the gap in grey). Choose it — the crew lead is
+    pre-selected. When CSP Lawal (or the crew lead) accepts, the vehicle turns **Responding** and drives toward the
+    SOS on **+15m**; click it on the map to see its crew, its line to the case and its breadcrumb. With a case
+    selected, an available vehicle's popup also offers **Pass this case to …**.
+31. **Temporary checkpoint.** CSP Lawal → *Cases* → **Map** → right-click (long-press on a phone) on the
+    Bodija–Sango road → **Add checkpoint here** → 4 h stop-and-search with two officers. It appears on the map and in
+    the Police Bodija chat ("Checkpoint set up: …"). Open it → **Close checkpoint**. Vehicles: *My officers* →
+    **Vehicles** (out of service with a reason, back in service, crew, patrol route — all audited).
+32. **Wall view.** The coordinator → *Cases* → **Map** → **Wall view**: full-screen dark map, the resources panel and a
+    live ticker of the latest 5 key events. Raise an Officer SOS as Grace: the nearest units are found by their
+    **vehicles** ("OFFICER NEEDS HELP — … from your vehicle AMO-IB-2. GO?"), and the ticker and map update. Esc exits.
+
+Who sees what: the control room sees every vehicle, checkpoint and route; a commander their own (plus joint
+checkpoints and vehicles responding to their cases); a field officer their own vehicle and station; the Governor
+counts per station / LGA only; the chairman, citizens, focal persons and the public none — enforced in the map
+data itself, not just hidden. Complaints near a checkpoint show "Near checkpoint: …" to the oversight panel only.
+
 Seeded on reset: a pending SOS (Olodo), the step-6 armed case passed to Grace, the
 step-7 Sango case, a handoff waiting at Police Mapo, an unclassified report waiting
 for review, Adewale's drainage case *Resolved* and waiting for him to confirm, and
@@ -335,7 +380,7 @@ Backup requested, Handoff pending.
 | --- | --- |
 | Routing matrix (most specific rule wins, coverage-based targets) | AI triage (keyword rules; English, Yoruba, Pidgin) |
 | Handoffs with accept/decline, SLA clocks, escalation ladder | OTP, SMS, WhatsApp, push (written to an outbox) |
-| Duty roster: on-duty people first, then the next role up | GPS ("Simulate my location" in Demo controls); map tiles from OpenStreetMap |
+| Duty roster: on-duty people first, then the next role up | GPS ("Simulate my location" in Demo controls); vehicle positions (from the demo clock, straight lines and approximate routes); map tiles from OpenStreetMap |
 | Duplicate merging; "Reported by N people" counts distinct reporters | Voice notes, USSD, 615 telephony |
 | Evidence before resolve; citizen confirmation and reopen | Database (`localStorage`) |
 | Role-based access, sealed/anonymous identities, break-glass | |
@@ -355,7 +400,8 @@ Backup requested, Handoff pending.
   `useLang`
 - `src/alerts.ts` + `src/sound.ts` — who hears which alert, repeat/stop, Web Audio chimes
 - `src/geo.ts` — "Use my location", nearest area, outside-Oyo check, simulated points
-- `src/mapdata.ts` — map data with the privacy rules, legend and starting views
+- `src/mapdata.ts` — map data with the privacy rules (incl. `mapResources`: who sees vehicles, checkpoints and routes), legend, starting views, clustering, ticker
+- `src/fleet.ts` — patrol vehicles, checkpoints, routes and hospitals (seed), simulated movement, ETA, breadcrumbs, nearest vehicles
 - `src/roles.ts` — role shapes, the per-role sidebar menus (max 5) and landing pages
 - `src/views/` — SignIn (+ Activate), Overview, Cases (work list), Chat (station group chat), Stations (admin stations & staff, rules), CaseView (header actions, stepper,
   details, Pass case modal, timeline), Officers, Reports, Inbox, Profile, Citizen (home,

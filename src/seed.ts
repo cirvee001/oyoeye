@@ -79,7 +79,8 @@ const CIVIC_DONE: Record<CategoryId, string[]> = {
   infrastructure: ['Line isolated by DisCo crew and pole replaced', 'Streetlights repaired along the stretch', 'Pipe clamped and water restored'],
 };
 
-const citizens = dep.people.filter((p) => p.role === 'citizen' && p.id !== 'cit1');
+// Random reporters never include Bose (her Restricted standing would hold scripted demo cases for a call-back).
+const citizens = dep.people.filter((p) => p.role === 'citizen' && p.id !== 'cit1' && p.id !== 'cit-bose');
 const dispatchers = dep.people.filter((p) => p.role === 'dispatcher');
 const METRO = dep.lgas.filter((l) => l.metro);
 const OTHERS = dep.lgas.filter((l) => !l.metro);
@@ -253,7 +254,8 @@ export function buildSeed(api: SeedApi) {
     const l = input.lgaId ? dep.lgas.find((x) => x.id === input.lgaId)! : R() < 0.68 ? pick(METRO) : pick(OTHERS);
     const area = input.area ?? pick(l.areas);
     const p: { inc?: Incident } = {};
-    events.push({ at, run: () => (p.inc = submitAt(at, { ...input, text: input.text.replace(/\{a\}/g, area), lgaId: l.id, area })) });
+    // Scripted demo cases (untriaged) never merge into random background history, whatever the time of day.
+    events.push({ at, run: () => (p.inc = submitAt(at, { ...input, text: input.text.replace(/\{a\}/g, area), lgaId: l.id, area, noMerge: opts?.untriaged || undefined })) });
     lifecycle(p, at, opts);
     return p;
   };

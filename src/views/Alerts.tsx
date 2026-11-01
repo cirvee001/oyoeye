@@ -7,7 +7,7 @@ import { Icon, hhmm, toast, useNow } from '../ui';
 
 /**
  * Control-room alerts (PRD v2.5 §1): chime every 30 s while an SOS / Officer SOS / Critical case
- * is unopened, a toast with "Open", the tab title "(1) SOS — OyoEye", and a screen-reader announcement.
+ * is unopened, a toast with "Open", the tab title "(1) SOS — Tell Seyi", and a screen-reader announcement.
  */
 export function AlertCenter({ me }: { me: Person }) {
   const s = useStore((x) => x);
@@ -42,7 +42,7 @@ export function AlertCenter({ me }: { me: Person }) {
     if (chime(alerts.some((a) => a.kind === 'sos') ? 'sos' : 'critical')) last.current = t;
   });
 
-  useEffect(() => () => void (typeof document !== 'undefined' && (document.title = 'OyoEye')), []);
+  useEffect(() => () => void (typeof document !== 'undefined' && (document.title = 'Tell Seyi')), []);
 
   return (
     <div className="sr-only" aria-live="assertive" role="alert">

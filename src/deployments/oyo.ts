@@ -426,6 +426,21 @@ people.forEach((p, k) => {
 });
 // v2.4: a citizen whose standing is Restricted (2 confirmed hoaxes) — her appeal waits in oversight.
 add({ id: 'cit-bose', name: 'Bose Akinwale', role: 'citizen', title: 'Resident, Agodi', phone: '0803 000 0111', demo: true, history: { reports: 4, confirmed: 1, false: 2 } });
+// v2.8: patrol crews. Pilot stations get enough officers to crew 2–4 vehicles and keep some on foot.
+// Added last, so every earlier seeded name stays the same.
+export const PILOT_STATIONS = ['pol-bdj', 'pol-iyg', 'pol-iwo', 'pol-map', 'pol-ibp', 'pol-okg', 'crp-ibd', 'crp-ibp', 'crp-okg', 'fire'];
+for (const id of PILOT_STATIONS) {
+  const a = AGENCIES.find((x) => x.id === id)!;
+  const want = a.kind === 'emergency' ? 6 : 7;
+  const have = people.filter((p) => p.agencyId === id && p.role === 'officer' && (p.staffStatus ?? 'active') === 'active').length;
+  for (let k = have; k < want; k++) {
+    const p = add({ name: nextName(), role: 'officer', title: a.kind === 'emergency' ? 'Fire crew' : 'Patrol crew', agencyId: id, staffId: staffId(a.kind) });
+    p.rank = a.kind === 'police' ? (k % 2 ? 'Sergeant' : 'Corporal') : a.kind === 'corps' ? 'Corps Member' : 'Officer';
+    p.serviceNumber = a.kind === 'police' ? `AP/${310000 + people.length * 37}` : a.kind === 'corps' ? `AMO/${2600 + people.length}` : `OY/CS/${1600 + people.length}`;
+    p.staffStatus = 'active';
+    p.postings = [{ stationId: id, from: 0 }];
+  }
+}
 // Seeded citizens and active focal persons have already accepted Rule Book v1.
 for (const p of people) if ((p.role === 'citizen' || p.role === 'focal') && p.staffStatus !== 'invited') p.rulebookAcceptedVersion = 1;
 const tunji = people.find((p) => p.id === 'f-tunji');
@@ -434,7 +449,7 @@ if (tunji) tunji.invitedBy = people.find((p) => p.role === 'chairman' && p.lgaId
 export const OYO: Deployment = {
   organisations: ORGANISATIONS,
   id: 'oyo',
-  product: 'OyoEye',
+  product: 'Tell Seyi',
   state: 'Oyo',
   prefix: 'OY',
   emergencyLine: '615',
