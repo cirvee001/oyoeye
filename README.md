@@ -1,4 +1,4 @@
-# OyoEye v2 — prototype
+# Tell Seyi (formerly OyoEye) v2 — prototype
 
 Citizen reporting, response and accountability for Oyo State, security first.
 **A citizen asks for help, the case moves from person to person, everyone sees its
@@ -116,7 +116,7 @@ on the case timeline.
    and confirm"). Note the reference. Footer → **Track a report** with it: *Pending review*, with
    "Pending review — the 615 control room will check your report soon".
 2. **615 Operator (OY-615-001).** The SOS arrives with a **two-tone chime**, a toast "SOS — Agbowo,
-   Ibadan North · Open", the tab title "(1) SOS — OyoEye", and a **flashing red row** first on
+   Ibadan North · Open", the tab title "(1) SOS — Tell Seyi", and a **flashing red row** first on
    *Cases → Pending review*. The chime repeats every 30 s until someone opens it. Press **View**:
    the sound stops (for every operator), the row is no longer tinted. The speaker in the top bar has
    **Mute for 15 min** (audited); if the browser blocked sound, click the "Click to enable alert
@@ -249,7 +249,7 @@ messages. Normal messages only raise the Chat unread count; urgent messages, bro
 25. **New citizen onboarding.** Sign out → Citizen tab → **0803 000 0500**, code 123456, first name
     "Kunle" → switch to **YO** in the top-right during onboarding → 4 onboarding cards → the 8 rules →
     **Mo yé mi, mo sì gbà** → Home stays in Yorùbá with the **Tuntun** (New) standing. Report
-    something with *Standard* identity: the confirmation SMS in the outbox is in Yorùbá ("OyoEye
+    something with *Standard* identity: the confirmation SMS in the outbox is in Yorùbá ("Tell Seyi
     OY-…: A ti gba ìròyìn yín…"). Sign out and in again: still YO. The audit log shows "Accepted Rule Book v1". (The red "In danger now? SOS" button is
     on every onboarding screen — onboarding never blocks SOS.)
 26. **Anonymous summary.** Signed out → "Report a problem anonymously": the 3-rule summary, then
@@ -259,7 +259,7 @@ messages. Normal messages only raise the Chat unread count; urgent messages, bro
     / hoax** with a reason of at least 20 characters. The duty lead opens it → **Confirm hoax** (or
     "Not a hoax — no penalty"). The reporter's standing card now says **Under review**, why, until
     when, and offers **Appeal**. The other reasons (No trace found, Duplicate, Not a matter for
-    OyoEye, Genuine mistake) never count.
+    Tell Seyi, Genuine mistake) never count.
 28. **Restricted reporter and appeal.** Operator → Bose's pending report: the credibility card says
     "⛔ Restricted reporter — call back before verifying (2 hoaxes in 12 months)" and **Verify & pass**
     first asks **Have you called back?** (Yes / Couldn't reach). Barr. Adeyemi → *Complaints* → the

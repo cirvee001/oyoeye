@@ -284,11 +284,11 @@ export function timelineRows(i: Incident, audit: { at: number; seq: number; acti
   const entries: TlRow[] = audit
     .filter((e) => e.incidentId === i.id && (view === 'all' || e.action !== 'Viewed restricted case'))
     .map((e) => ({ at: e.at, seq: e.seq, title: e.action, who: e.actor, detail: e.detail, kind: HANDOFF_ACTIONS.includes(e.action) ? 'handoffs' : MESSAGE_ACTIONS.includes(e.action) ? 'messages' : e.action === 'Escalated' ? 'escalation' : 'updates' }));
-  const msgs: TlRow[] = i.updates.map((u, k) => ({ at: u.at, seq: -k - 1, title: 'Update sent to reporter', who: 'OyoEye', detail: u.text, kind: 'messages' }));
+  const msgs: TlRow[] = i.updates.map((u, k) => ({ at: u.at, seq: -k - 1, title: 'Update sent to reporter', who: 'Tell Seyi', detail: u.text, kind: 'messages' }));
   const all = [...entries, ...msgs].sort((a, b) => b.at - a.at || b.seq - a.seq);
   return view === 'key' ? all.filter((r) => isKeyStep(r.title)) : all;
 }
-const SYSTEM_WHO = ['OyoEye', 'Triage assistant'];
+const SYSTEM_WHO = ['Tell Seyi', 'Triage assistant'];
 /** Runs of 3+ consecutive system entries of the same kind collapse into one row ("4 messages sent · show"). */
 export function collapseRuns(rows: TlRow[]) {
   const out: (TlRow | { run: TlRow[] })[] = [];

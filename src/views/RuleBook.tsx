@@ -67,7 +67,7 @@ export function Onboarding({ replay }: { replay?: boolean }) {
   return (
     <div className="onboarding">
       <div className="ob-top">
-        <span className="ob-brand">OyoEye</span>
+        <span className="ob-brand">Tell Seyi</span>
         <a className="btn danger sm" href="#/sos">
           <Icon name="sos" size={16} /> {t('sos.ondanger')}
         </a>
@@ -133,7 +133,7 @@ export function RuleBookPage() {
             ))}
           </ol>
           <p className="rules-closing">{pick(RULES_CLOSING, lang)}</p>
-          <p className="tiny muted print-stamp">{`OyoEye Rule Book v${getState().rulebookVersion} · ${fmtDateTimeWat(now())}`}</p>
+          <p className="tiny muted print-stamp">{`Tell Seyi Rule Book v${getState().rulebookVersion} · ${fmtDateTimeWat(now())}`}</p>
           <div className="row">
             {signedIn() && (
               <button className="btn" onClick={() => go('/onboarding')}>

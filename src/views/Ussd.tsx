@@ -10,17 +10,17 @@ import { go } from '../ui';
 
 /** The Rule Book in 4 SMS-length screens (v2.4 §3.1). */
 export const USSD_RULES = [
-  'OyoEye Rules 1/4\n1 Tell the truth, as you saw it.\n2 SOS is for danger happening now.',
-  'OyoEye Rules 2/4\n3 Fake alarms put lives at risk. Honest mistakes are fine.\n4 Your safety comes first.',
-  'OyoEye Rules 3/4\n5 No jungle justice.\n6 Describe actions, not tribes.',
-  'OyoEye Rules 4/4\n7 Help is free. Never pay.\n8 Respect privacy.',
+  'Tell Seyi Rules 1/4\n1 Tell the truth, as you saw it.\n2 SOS is for danger happening now.',
+  'Tell Seyi Rules 2/4\n3 Fake alarms put lives at risk. Honest mistakes are fine.\n4 Your safety comes first.',
+  'Tell Seyi Rules 3/4\n5 No jungle justice.\n6 Describe actions, not tribes.',
+  'Tell Seyi Rules 4/4\n7 Help is free. Never pay.\n8 Respect privacy.',
 ];
 /** DRAFT — needs native-speaker review. The same 4 screens in Yoruba (each fits one SMS screen). */
 export const USSD_RULES_YO = [
-  'Òfin OyoEye 1/4\n1 Sọ òótọ́, bí ẹ ṣe rí i.\n2 SOS wà fún ewu tó ń ṣẹlẹ̀ báyìí.',
-  'Òfin OyoEye 2/4\n3 Ìròyìn èké ń fi ẹ̀mí wewu. Àṣìṣe òtítọ́ kò burú.\n4 Ààbò yín ló ṣáájú.',
-  'Òfin OyoEye 3/4\n5 Kò sí ìdájọ́ ọwọ́ ara ẹni.\n6 Ṣàpèjúwe ìwà, kì í ṣe ẹ̀yà.',
-  'Òfin OyoEye 4/4\n7 Ìrànlọ́wọ́ jẹ́ ọ̀fẹ́. Ẹ má sanwó.\n8 Bọ̀wọ̀ fún àṣírí ènìyàn.',
+  'Òfin Tell Seyi 1/4\n1 Sọ òótọ́, bí ẹ ṣe rí i.\n2 SOS wà fún ewu tó ń ṣẹlẹ̀ báyìí.',
+  'Òfin Tell Seyi 2/4\n3 Ìròyìn èké ń fi ẹ̀mí wewu. Àṣìṣe òtítọ́ kò burú.\n4 Ààbò yín ló ṣáájú.',
+  'Òfin Tell Seyi 3/4\n5 Kò sí ìdájọ́ ọwọ́ ara ẹni.\n6 Ṣàpèjúwe ìwà, kì í ṣe ẹ̀yà.',
+  'Òfin Tell Seyi 4/4\n7 Ìrànlọ́wọ́ jẹ́ ọ̀fẹ́. Ẹ má sanwó.\n8 Bọ̀wọ̀ fún àṣírí ènìyàn.',
 ];
 
 const PHONE = '0805 555 0199';

@@ -74,8 +74,8 @@ export const isMuted = (s: State, me: Person, at: number) => alertMutedUntil(s, 
 /** Play now? First time, or 30 s since the last chime. */
 export const alertDue = (lastPlayed: number | undefined, at: number) => lastPlayed == null || at - lastPlayed >= ALERT_REPEAT_MS;
 
-/** Browser tab title while anything is unopened: "(1) SOS — OyoEye". */
+/** Browser tab title while anything is unopened: "(1) SOS — Tell Seyi". */
 export function alertTitle(alerts: AlertItem[]) {
-  if (!alerts.length) return 'OyoEye';
-  return `(${alerts.length}) ${alerts.some((a) => a.kind === 'sos') ? 'SOS' : 'Critical'} — OyoEye`;
+  if (!alerts.length) return 'Tell Seyi';
+  return `(${alerts.length}) ${alerts.some((a) => a.kind === 'sos') ? 'SOS' : 'Critical'} — Tell Seyi`;
 }

@@ -66,7 +66,7 @@ import { PHONE_HINT, fmtTimeWat, lagosIsoDate, lagosYymmdd, normalisePhone, vali
 
 export const dep = OYO;
 // v2 changes the status model; old v1 state is ignored and the demo reseeds.
-const KEY = 'oyoeye:v2.8'; // v2.2 adds stations, staff onboarding and chat to the saved state
+const KEY = 'oyoeye:v2.9'; // v2.9: renamed to Tell Seyi (fresh demo so old messages don't carry the old name). Storage keys keep the internal 'oyoeye' prefix.
 
 export interface Unseal {
   incidentId: string;
@@ -112,7 +112,7 @@ export interface State {
   noticeRules: { enabled: Record<string, boolean>; kidnapApproval: boolean };
   loneCheckMins: number;
   mapPrefs: Record<string, { layers: string[]; time: '24h' | '7d' | '30d'; base?: 'osm' | 'dark' | 'light' }>;
-  /** v2.4: current OyoEye Rule Book version. */
+  /** v2.4: current Tell Seyi Rule Book version. */
   rulebookVersion: number;
   // v2.5
   /** Demo control: "Use my location" returns this point instead of the presenter's real one. */
@@ -218,7 +218,7 @@ export function verifyChain(entries = state.audit) {
   return { ok: true as const, brokenAt: undefined };
 }
 
-const SYSTEM = { id: 'system', name: 'OyoEye' };
+const SYSTEM = { id: 'system', name: 'Tell Seyi' };
 const AI = { id: 'ai', name: 'Triage assistant' };
 
 function send(at: number, to: Person | undefined, channel: OutboundMessage['channel'], text: string, incidentId?: string, phone?: string, lang?: Lang) {
@@ -242,7 +242,7 @@ function notify(at: number, to: (string | undefined)[], kind: NoticeKind, body: 
 const hhmm = (t: number) => fmtTimeWat(t); // SMS and audit timestamps carry WAT (v2.6 §2)
 const place = (i: Incident) => `${i.area}, ${lgaOf(i.lgaId).name}`;
 
-function alertText(i: Incident, heading = 'OYOEYE ALERT') {
+function alertText(i: Incident, heading = 'TELL SEYI ALERT') {
   const lines = [
     heading,
     `${i.severity.toUpperCase()} PRIORITY`,
@@ -252,7 +252,7 @@ function alertText(i: Incident, heading = 'OYOEYE ALERT') {
   ];
   if (i.restricted) lines.push('Reporter: via control room only. Treat as unverified until confirmed.');
   if (i.reports.length > 1) lines.push(`${distinctReporters(i)} independent reporters`);
-  lines.push('Open OyoEye to ACCEPT or DECLINE');
+  lines.push('Open Tell Seyi to ACCEPT or DECLINE');
   return lines.join('\n');
 }
 
@@ -462,7 +462,7 @@ function submitAt(at: number, input: ReportInput) {
     audit(at, SYSTEM, 'Registered focal person', 'Report from a registered community focal person — still needs a person to verify; never auto-dispatched', i.id);
   }
 
-  const heading = input.sos ? 'SOS — OYOEYE' : 'NEW SECURITY REPORT';
+  const heading = input.sos ? 'SOS — TELL SEYI' : 'NEW SECURITY REPORT';
   if (restricted) {
     // Security never auto-dispatches: a person in the control room (or the restricted desk) decides.
     if (sensitiveOnly && routed.agency) i.agencyId = routed.agency.id;
@@ -471,7 +471,7 @@ function submitAt(at: number, input: ReportInput) {
     for (const d of desk) send(at, person(d), 'push', alertText(i, heading), i.id);
     if (!sensitiveOnly && (input.sos || i.severity === 'critical')) {
       notify(at, dutyLeads(), 'info', `${input.sos ? 'SOS' : 'Critical report'} waiting for review: ${place(i)}.`, i);
-      send(at, person(dutyLeads()[0]), 'sms', alertText(i, input.sos ? 'SOS — OYOEYE' : 'CRITICAL SECURITY REPORT'), i.id);
+      send(at, person(dutyLeads()[0]), 'sms', alertText(i, input.sos ? 'SOS — TELL SEYI' : 'CRITICAL SECURITY REPORT'), i.id);
     }
     notifyReporters(i, at, msg(input.sos ? 'm.recv.sos' : 'm.recv.sec', { area: i.area }));
   } else if (category === 'other' || !routed.agency || (ai.confidence < 0.5 && !input.category)) {
@@ -518,7 +518,7 @@ function createHandoff(i: Incident, at: number, from: Person | typeof SYSTEM, to
     vehicleId: to.vehicleId,
   };
   i.handoffs.push(h);
-  const fromLabel = from === SYSTEM ? 'OyoEye routing' : `${from.name}${(from as Person).agencyId ? ` (${agency((from as Person).agencyId)?.short})` : ''}`;
+  const fromLabel = from === SYSTEM ? 'Tell Seyi routing' : `${from.name}${(from as Person).agencyId ? ` (${agency((from as Person).agencyId)?.short})` : ''}`;
   i.agencyId = to.agencyId;
   i.officerId = kind === 'officer' ? to.personId : undefined;
   i.status = 'assigned';
@@ -528,7 +528,7 @@ function createHandoff(i: Incident, at: number, from: Person | typeof SYSTEM, to
   i.ackDueAt = at + ackMinutes(i) * MIN;
   i.by.assigned = handoffTarget(h);
   const target = to.personId ? `${person(to.personId)?.name} (${toAgency?.short})` : toAgency?.short;
-  const fromUnit = from === SYSTEM ? 'OyoEye routing' : agency((from as Person).agencyId)?.short ?? from.name;
+  const fromUnit = from === SYSTEM ? 'Tell Seyi routing' : agency((from as Person).agencyId)?.short ?? from.name;
   const what =
     kind === 'handback' ? `Passed back to ${person(to.personId)?.name ?? toAgency?.short}` : kind === 'control' ? `Passed back to the ${dep.emergencyLine} control room` : kind === 'officer' ? `Passed to ${person(to.personId)?.name}` : i.t.verified === at && from !== SYSTEM ? `Verified and passed to ${target}` : `Passed from ${fromUnit} to ${target}`;
   audit(at, from, kind === 'handback' || kind === 'control' ? 'Passed back' : 'Passed', `${what} — ${reason}${note ? `. Note: ${note}` : ''}${from === SYSTEM ? '' : ` (by ${fromLabel})`}`, i.id);
@@ -536,7 +536,7 @@ function createHandoff(i: Incident, at: number, from: Person | typeof SYSTEM, to
   const receivers = to.personId ? [to.personId] : agencyManagers(dep, to.agencyId, onDuty).map((p) => p.id);
   const verb = kind === 'handback' || kind === 'control' ? 'passed back' : 'passed';
   notify(at, receivers, 'handoff', `${from === SYSTEM ? 'New case' : `${from.name} ${verb} a case`}: ${subLabel(i.category, i.subcategory)} — ${place(i)}. Reason: ${reason}. Accept within ${ackMinutes(i)} min.`, i, h.id);
-  for (const r of receivers) send(at, person(r), 'whatsapp', alertText(i, kind === 'handback' ? 'OYOEYE — CASE PASSED BACK TO YOU' : 'OYOEYE — CASE PASSED TO YOU'), i.id);
+  for (const r of receivers) send(at, person(r), 'whatsapp', alertText(i, kind === 'handback' ? 'TELL SEYI — CASE PASSED BACK TO YOU' : 'TELL SEYI — CASE PASSED TO YOU'), i.id);
   if (i.severity === 'critical' && to.personId) send(at, person(to.personId), 'sms', alertText(i), i.id);
   return h;
 }
@@ -575,7 +575,7 @@ function raise(i: Incident, at: number, reason: string) {
   audit(at, SYSTEM, 'Escalated', `Level ${i.escalationLevel} — ${levelLabel(i)}${who ? ` (${who.name})` : ''}: ${reason}`, i.id);
   if (!seeding && agency(i.agencyId)?.kind !== 'control_room') systemPost(i.agencyId, `Case ${i.ref} escalated to L${i.escalationLevel} (${levelLabel(i)}): ${reason}.`, at);
   notify(at, [who?.id], 'escalation', `Escalated to you (L${i.escalationLevel} · ${levelLabel(i)}): ${subLabel(i.category, i.subcategory)} — ${place(i)}. Reason: ${reason}. Held by ${holderLabel(i)}.`, i);
-  send(at, who, i.escalationLevel >= 4 ? 'sms' : 'whatsapp', `${alertText(i, `OYOEYE ESCALATION — LEVEL ${i.escalationLevel}`)}\nReason: ${reason}.`, i.id);
+  send(at, who, i.escalationLevel >= 4 ? 'sms' : 'whatsapp', `${alertText(i, `TELL SEYI ESCALATION — LEVEL ${i.escalationLevel}`)}\nReason: ${reason}.`, i.id);
   // The sender of an unanswered handoff is told.
   const h = pendingHandoff(i);
   if (h && h.fromId !== SYSTEM.id && h.fromId !== who?.id && reason === 'not accepted in time') {
@@ -593,7 +593,7 @@ export function tick() {
       i.status = 'closed';
       i.verification = 'timeout';
       i.t.closed = at;
-      i.by.closed = 'OyoEye (no reply in 72h)';
+      i.by.closed = 'Tell Seyi (no reply in 72h)';
       audit(at, SYSTEM, 'Closed', 'No citizen response in 72h — Closed (unconfirmed)', i.id);
       askFeedback(at, i);
       changed = true;
@@ -938,7 +938,7 @@ export const actions = {
       audit(at, me, 'Backup requested', text, i.id);
       const managers = agencyManagers(dep, i.agencyId, onDuty).map((p) => p.id);
       notify(at, [...dutyLeads(), ...managers], 'backup', `Backup requested by ${me.name} on ${i.ref} — ${place(i)}: "${text}"`, i);
-      send(at, person(dutyLeads()[0]), 'sms', `${alertText(i, 'OYOEYE — BACKUP REQUESTED')}\n${me.name}: ${text}`, i.id);
+      send(at, person(dutyLeads()[0]), 'sms', `${alertText(i, 'TELL SEYI — BACKUP REQUESTED')}\n${me.name}: ${text}`, i.id);
     }),
 
   sendBackup: (id: string, agencyId: string) =>
@@ -1040,7 +1040,7 @@ export const actions = {
       audit(at, me, 'IDENTITY UNSEALED', `Break-glass for 30 min. Reason: ${reason}`, i.id);
       const coord = dep.people.find((p) => p.agencyId === controlRoom().id && p.role === 'agency_head');
       notify(at, [coord?.id], 'info', `${me.name} unsealed a reporter identity on ${i.ref}. Reason: ${reason}`, i);
-      send(at, coord, 'sms', `OyoEye oversight: ${me.name} unsealed a reporter identity on ${i.ref}. Reason: ${reason}`, i.id);
+      send(at, coord, 'sms', `Tell Seyi oversight: ${me.name} unsealed a reporter identity on ${i.ref}. Reason: ${reason}`, i.id);
     }),
 };
 
@@ -1132,7 +1132,7 @@ const fmtPhone = (s: string) => {
 };
 
 function inviteSms(at: number, p: Person, by: Person, stationName: string) {
-  send(at, p, 'sms', `OyoEye: ${by.name} added you to ${stationName}. Activation code ${p.inviteCode}. Open oyoeye.oy.gov.ng or dial *615*9#`);
+  send(at, p, 'sms', `Tell Seyi: ${by.name} added you to ${stationName}. Activation code ${p.inviteCode}. Open tellseyi.oy.gov.ng or dial *615*9#`);
 }
 
 export interface InviteInput {
@@ -1149,7 +1149,7 @@ function createInvite(at: number, me: Person, stationId: string, v: InviteInput,
   if (!v.name.trim()) return 'Enter the full name';
   if (!v.serviceNumber.trim()) return 'Enter the service number';
   if (!validPhone(v.phone)) return PHONE_HINT;
-  if (dep.people.some((p) => p.role !== 'citizen' && p.staffStatus !== 'deactivated' && digits(p.phone) === digits(v.phone))) return 'Someone on OyoEye already uses that phone number';
+  if (dep.people.some((p) => p.role !== 'citizen' && p.staffStatus !== 'deactivated' && digits(p.phone) === digits(v.phone))) return 'Someone on Tell Seyi already uses that phone number';
   const p: Person = {
     id: `st${at}${++staffSeq}`,
     name: withRank(v.name, v.rank),
@@ -1402,7 +1402,7 @@ export const onboarding = {
     audit(at, me, 'Transfer accepted', `${p.name}: ${from.short} → ${to.short}. Posting history updated; chat membership moved.`);
     systemPost(from.id, `${p.name} was transferred out to ${to.short}.`, at);
     systemPost(to.id, `${p.name} joined ${to.short} (transferred from ${from.short}).`, at);
-    send(at, p, 'sms', `OyoEye: you have been posted to ${to.short} from ${t.effective}. Your cases and station chat have moved.`);
+    send(at, p, 'sms', `Tell Seyi: you have been posted to ${to.short} from ${t.effective}. Your cases and station chat have moved.`);
     notify(at, [t.byId, p.id], 'accepted', `${me.name} accepted ${p.name} at ${to.short}.`);
     commit();
   },
@@ -1448,7 +1448,7 @@ export const onboarding = {
     p.inviteCode = code6();
     if (state.signedInId === p.id && me.id !== p.id) state.signedInId = undefined;
     audit(at, me, 'Lost phone reported', `${p.name}: all sessions signed out; next sign-in needs a new SMS code`);
-    send(at, p, 'sms', `OyoEye: your account was signed out everywhere. To sign in again use code ${p.inviteCode}.`);
+    send(at, p, 'sms', `Tell Seyi: your account was signed out everywhere. To sign in again use code ${p.inviteCode}.`);
     commit();
   },
   runTestCase: (stationId: string): string | undefined => {
@@ -1632,7 +1632,7 @@ function post(at: number, me: Person, channelId: string, v: { kind: ChatMessage[
     notify(at, onDutyMembers, 'chat', `URGENT in ${c.name} from ${me.name}: ${maskPhones(v.text ?? v.kind)}`, undefined, undefined, undefined, channelId);
     for (const id of onDutyMembers) send(at, person(id), 'push', `URGENT · ${c.name}\n${me.name}: ${maskPhones(v.text ?? v.kind)}`);
     const cmdr = agency(c.stationId)?.commanderId;
-    if (cmdr && cmdr !== me.id) send(at, person(cmdr), 'sms', `OyoEye URGENT in ${c.name} from ${me.name}. Open OyoEye chat.`);
+    if (cmdr && cmdr !== me.id) send(at, person(cmdr), 'sms', `Tell Seyi URGENT in ${c.name} from ${me.name}. Open Tell Seyi chat.`);
   }
   // @mentions raise the bell; normal messages only show as unread counts.
   if (v.text && v.text.includes('@')) {
@@ -1724,7 +1724,7 @@ export const chat = {
     audit(at, me, 'Broadcast sent', `To ${targets.length} station(s) · #${textHash(text)}`);
     const recipients = targets.flatMap((sid) => activeStaff(sid).map((p) => p.id));
     notify(at, recipients, 'chat', `Control room alert from ${me.name}: ${maskPhones(text)}`, undefined, undefined, undefined, BROADCAST);
-    for (const sid of targets) send(at, person(agency(sid)?.commanderId), 'push', `OYOEYE CONTROL ROOM ALERT\n${maskPhones(text)}\nAcknowledge in OyoEye chat.`);
+    for (const sid of targets) send(at, person(agency(sid)?.commanderId), 'push', `TELL SEYI CONTROL ROOM ALERT\n${maskPhones(text)}\nAcknowledge in Tell Seyi chat.`);
     commit();
   },
   ack: (messageId: string): string | undefined => {
@@ -1824,7 +1824,7 @@ export const community = {
     if (!canManageFocal(me, v.lgaId)) return 'Only the commander covering this LGA or its chairman can invite focal persons';
     if (!v.name.trim() || !v.community.trim()) return 'Enter the name and community';
     if (!validPhone(v.phone)) return PHONE_HINT;
-    if (dep.people.some((p) => p.role !== 'citizen' && p.staffStatus !== 'deactivated' && digits(p.phone) === digits(v.phone))) return 'Someone on OyoEye already uses that phone number';
+    if (dep.people.some((p) => p.role !== 'citizen' && p.staffStatus !== 'deactivated' && digits(p.phone) === digits(v.phone))) return 'Someone on Tell Seyi already uses that phone number';
     const at = now();
     const p: Person = {
       id: `fp${at}${++staffSeq}`,
@@ -1845,7 +1845,7 @@ export const community = {
     };
     dep.people.push(p);
     audit(at, me, 'Focal person invited', `${p.name} — ${p.title}, ${lgaOf(p.lgaId!).name}`);
-    send(at, p, 'sms', `OyoEye: ${me.name} added you as a community focal person for ${p.community}. Activation code ${p.inviteCode}. Open oyoeye.oy.gov.ng or dial *615*9#. Help is free. Never pay.`);
+    send(at, p, 'sms', `Tell Seyi: ${me.name} added you as a community focal person for ${p.community}. Activation code ${p.inviteCode}. Open tellseyi.oy.gov.ng or dial *615*9#. Help is free. Never pay.`);
     commit();
   },
   verify: (id: string): string | undefined => {
@@ -1917,7 +1917,7 @@ const ARMED_KINDS = ['police', 'corps'];
 
 export const NOTICE_TYPES = ['armed', 'robbery', 'kidnapping', 'violence', 'suspicious', 'threat', 'sos'];
 export const leadersFor = (i: Incident) => LEADERS.filter((l) => l.lgaId === i.lgaId && (!l.areas.length || l.areas.includes(i.area)));
-const leaderText = (i: Incident) => `OyoEye 615: A security incident has been reported in ${i.area}. Response units have been dispatched. Please keep calm and report anything you see to 615.`;
+const leaderText = (i: Incident) => `Tell Seyi 615: A security incident has been reported in ${i.area}. Response units have been dispatched. Please keep calm and report anything you see to 615.`;
 
 function sendLeaderNotices(at: number, i: Incident, ids: string[], actor: Person | typeof SYSTEM) {
   for (const id of ids) {
@@ -1982,7 +1982,7 @@ export const feedbackFor = (s: State, reportRef: string) => s.feedback.find((f) 
 
 function createComplaint(at: number, c: Omit<Complaint, 'id' | 'at' | 'status' | 'log'>) {
   const id = `CC-${String(state.complaints.length + 101).padStart(4, '0')}`;
-  const full: Complaint = { ...c, id, at, status: 'new', log: [{ at, by: 'OyoEye', text: 'Complaint received' }] };
+  const full: Complaint = { ...c, id, at, status: 'new', log: [{ at, by: 'Tell Seyi', text: 'Complaint received' }] };
   state.complaints.unshift(full);
   // The audit entry is not attached to the case, so the unit's timeline never shows it.
   audit(at, { id: 'protected', name: 'Complainant (protected)' }, 'Conduct complaint received', `${id} · ${c.kind}`);
@@ -2066,8 +2066,8 @@ export const oversight = {
     c.referredTo = to;
     c.log.push({ at, by: me.name, text: `Referred to ${to}` });
     audit(at, me, 'Complaint referred', `${c.id} → ${to}`);
-    // Referred by secure letter outside the unit's own OyoEye views; no complainant identity.
-    send(at, undefined, 'sms', `OyoEye Oversight Panel: complaint ${c.id} has been referred to ${to} for investigation. Details follow by secure letter.`, undefined, `${to} (discipline desk)`);
+    // Referred by secure letter outside the unit's own Tell Seyi views; no complainant identity.
+    send(at, undefined, 'sms', `Tell Seyi Oversight Panel: complaint ${c.id} has been referred to ${to} for investigation. Details follow by secure letter.`, undefined, `${to} (discipline desk)`);
   }),
   close: (id: string, outcome: NonNullable<Complaint['outcome']>, note = '') => complaintAct(id, (c, at, me) => {
     c.status = 'closed';
@@ -2183,14 +2183,14 @@ function raiseOfficerSos(at: number, officer: Person, kind: 'distress' | 'missed
     const msg = `OFFICER NEEDS HELP — ${officer.name}, ${area}, ${u.km.toFixed(1)} km from ${call ? `your vehicle ${call}` : 'you'}. GO?`;
     notify(at, who, 'sos', msg, i, undefined, undefined, undefined, u.agencyId);
     for (const id of who) {
-      send(at, person(id), 'sms', `OYOEYE ${msg}`, i.id);
-      send(at, person(id), 'push', `OYOEYE ${msg}`, i.id);
+      send(at, person(id), 'sms', `TELL SEYI ${msg}`, i.id);
+      send(at, person(id), 'push', `TELL SEYI ${msg}`, i.id);
     }
   }
   const cmdr = agency(officer.agencyId)?.commanderId;
   const leads = dutyLeads();
   notify(at, [cmdr, ...leads], 'sos', `${kind === 'missed' ? 'MISSED CHECK-IN' : 'OFFICER SOS'}: ${officer.name} near ${area}. Nearest units alerted.`, i);
-  for (const id of [cmdr, ...leads]) send(at, person(id), 'sms', `OYOEYE ${kind === 'missed' ? 'MISSED CHECK-IN' : 'OFFICER SOS'}: ${officer.name} near ${area}, ${lga.name}. Case ${ref}.`, i.id);
+  for (const id of [cmdr, ...leads]) send(at, person(id), 'sms', `TELL SEYI ${kind === 'missed' ? 'MISSED CHECK-IN' : 'OFFICER SOS'}: ${officer.name} near ${area}, ${lga.name}. Case ${ref}.`, i.id);
   if (officer.agencyId) post(at, officer, channelIdOf(officer.agencyId), { kind: 'text', text: `OFFICER SOS — ${officer.name} needs help near ${area}. Nearest units are being sent.`, urgent: true });
   return i;
 }
@@ -2332,7 +2332,7 @@ function runCheckIns(at: number) {
     if (!l.promptAt && at >= l.nextDue) {
       i.lone = { ...l, promptAt: l.nextDue };
       audit(at, SYSTEM, 'Lone check-in due', `Asked ${person(l.officerId)?.name}: "Are you OK?"`, i.id);
-      send(at, person(l.officerId), 'push', `OyoEye: Are you OK? Tap I'm OK or I need help (case ${i.ref}).`, i.id);
+      send(at, person(l.officerId), 'push', `Tell Seyi: Are you OK? Tap I'm OK or I need help (case ${i.ref}).`, i.id);
       changed = true;
     } else if (l.promptAt && at >= l.promptAt + 3 * MIN) {
       i.lone = undefined;
@@ -2379,7 +2379,7 @@ function holdArmed(i: Incident, at: number, me: Person, to: Agency, reason: stri
 export const REJECT_REASONS: { id: RejectKind; label: string; penalty: boolean }[] = [
   { id: 'no_trace', label: 'No trace found', penalty: false },
   { id: 'duplicate', label: 'Duplicate', penalty: false },
-  { id: 'not_ours', label: 'Not a matter for OyoEye', penalty: false },
+  { id: 'not_ours', label: 'Not a matter for Tell Seyi', penalty: false },
   { id: 'mistake', label: 'Genuine mistake', penalty: false },
   { id: 'hoax', label: 'Deliberate false alarm / hoax', penalty: true },
 ];
@@ -2477,7 +2477,7 @@ export const standing = {
 
 function appealAt(at: number, me: Person, text: string, hoaxCaseIds: string[]) {
   const id = `CC-${String(state.complaints.length + 101).padStart(4, '0')}`;
-  state.complaints.unshift({ id, at, kind: 'appeal', text: text.trim(), officerIds: [], hoaxCaseIds, complainant: { personId: me.id, name: me.name, phone: me.phone }, status: 'new', log: [{ at, by: 'OyoEye', text: 'Standing appeal received' }] });
+  state.complaints.unshift({ id, at, kind: 'appeal', text: text.trim(), officerIds: [], hoaxCaseIds, complainant: { personId: me.id, name: me.name, phone: me.phone }, status: 'new', log: [{ at, by: 'Tell Seyi', text: 'Standing appeal received' }] });
   audit(at, { id: 'protected', name: 'Reporter (protected)' }, 'Standing appeal received', `${id} · ${hoaxCaseIds.length} hoax mark(s)`);
   notify(at, dep.people.filter((p) => p.role === 'oversight').map((p) => p.id), 'info', `New standing appeal ${id}.`);
 }

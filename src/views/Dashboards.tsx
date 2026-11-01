@@ -275,7 +275,7 @@ function Ask() {
   const [res, setRes] = useState<ReturnType<typeof answer>>();
   const examples = ['Show unresolved flooding incidents in Ibadan from the last 72 hours', 'Which LGAs currently have the highest number of unresolved road reports?', "Give me today's summary", 'Which agencies have breached response targets this week?'];
   return (
-    <Card title="Ask OyoEye" right={<span className="tiny muted">Answers come only from platform records</span>}>
+    <Card title="Ask a question" right={<span className="tiny muted">Answers come only from platform records</span>}>
       <form
         className="row"
         onSubmit={(e) => {

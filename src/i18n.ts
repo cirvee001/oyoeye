@@ -52,7 +52,7 @@ export const catLabel = (c: CategoryId, lang: Lang = 'en') => tr(`cat.${c}` as S
 /** Plain explanation of a status for citizens, e.g. "Verified — the 615 control room has checked your report". */
 export const statusExplain = (i: Pick<Incident, 'status'>, lang: Lang = 'en') => tr(`stx.${i.status}` as StrKey, lang);
 
-// ---------- v2.4: onboarding and the OyoEye Rule Book ----------
+// ---------- v2.4: onboarding and the Tell Seyi Rule Book ----------
 // DRAFT — needs native-speaker review (every Yoruba string below).
 
 export interface RuleText {
@@ -67,8 +67,8 @@ export interface RuleText {
 export const ONBOARDING: { title: [string, string]; body: [string, string]; icon: string }[] = [
   {
     icon: 'home',
-    title: ['Welcome to OyoEye', 'Ẹ káàbọ̀ sí OyoEye'],
-    body: ['See it. Report it. We act on it. OyoEye connects you to the 615 control room, Police, Amotekun and state agencies.', 'Rí i. Ròyìn rẹ̀. A ó gbé ìgbésẹ̀. OyoEye so yín pọ̀ mọ́ yàrá ìṣàkóso 615, Ọlọ́pàá, Àmọ̀tẹ́kùn àti àwọn ilé-iṣẹ́ ìjọba.'],
+    title: ['Welcome to Tell Seyi', 'Ẹ káàbọ̀ sí Tell Seyi'],
+    body: ['See it. Report it. We act on it. Tell Seyi connects you to the 615 control room, Police, Amotekun and state agencies.', 'Rí i. Ròyìn rẹ̀. A ó gbé ìgbésẹ̀. Tell Seyi so yín pọ̀ mọ́ yàrá ìṣàkóso 615, Ọlọ́pàá, Àmọ̀tẹ́kùn àti àwọn ilé-iṣẹ́ ìjọba.'],
   },
   {
     icon: 'sos',
@@ -88,7 +88,7 @@ export const ONBOARDING: { title: [string, string]; body: [string, string]; icon
   {
     icon: 'file',
     title: ['The Rule Book', 'Ìwé Òfin'],
-    body: ['Next: 8 short rules that keep OyoEye working for everyone →', 'Èyí tó kàn: òfin kúkúrú mẹ́jọ tó jẹ́ kí OyoEye ṣiṣẹ́ fún gbogbo ènìyàn →'],
+    body: ['Next: 8 short rules that keep Tell Seyi working for everyone →', 'Èyí tó kàn: òfin kúkúrú mẹ́jọ tó jẹ́ kí Tell Seyi ṣiṣẹ́ fún gbogbo ènìyàn →'],
   },
 ];
 
@@ -136,11 +136,11 @@ export const RULES: RuleText[] = [
   {
     icon: 'camera',
     title: ['Respect privacy.', 'Bọ̀wọ̀ fún àṣírí ènìyàn.'],
-    why: ['Don’t post victims’ photos or names on WhatsApp or social media. Share them only through OyoEye, where they are protected. Confirm honestly when we ask “Is it fixed?”.', 'Ẹ má fi àwòrán tàbí orúkọ àwọn olùfaragbá sórí WhatsApp tàbí ẹ̀rọ ayélujára. Ẹ fi wọ́n ránṣẹ́ nípasẹ̀ OyoEye nìkan, níbi tí a ti dáàbò bò wọ́n. Ẹ sọ òótọ́ nígbà tí a bá béèrè “Ṣé wọ́n ti ṣe é?”.'],
+    why: ['Don’t post victims’ photos or names on WhatsApp or social media. Share them only through Tell Seyi, where they are protected. Confirm honestly when we ask “Is it fixed?”.', 'Ẹ má fi àwòrán tàbí orúkọ àwọn olùfaragbá sórí WhatsApp tàbí ẹ̀rọ ayélujára. Ẹ fi wọ́n ránṣẹ́ nípasẹ̀ Tell Seyi nìkan, níbi tí a ti dáàbò bò wọ́n. Ẹ sọ òótọ́ nígbà tí a bá béèrè “Ṣé wọ́n ti ṣe é?”.'],
   },
 ];
 
-export const RULES_CLOSING: [string, string] = ['OyoEye works when we all use it honestly. Thank you for keeping Oyo safe.', 'OyoEye ń ṣiṣẹ́ nígbà tí gbogbo wa bá lò ó pẹ̀lú òtítọ́. A dúpẹ́ pé ẹ ń pa Ọ̀yọ́ mọ́ láàbò.'];
+export const RULES_CLOSING: [string, string] = ['Tell Seyi works when we all use it honestly. Thank you for keeping Oyo safe.', 'Tell Seyi ń ṣiṣẹ́ nígbà tí gbogbo wa bá lò ó pẹ̀lú òtítọ́. A dúpẹ́ pé ẹ ń pa Ọ̀yọ́ mọ́ láàbò.'];
 export const AGREE: [string, string] = ['I understand and agree', 'Mo yé mi, mo sì gbà'];
 /** The three key rules shown to anonymous reporters (§3.1.2). */
 export const KEY_RULES = [0, 2, 6];

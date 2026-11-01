@@ -55,7 +55,7 @@ function VehiclesTab() {
         </a>
       </div>
       {!vehicles.length ? (
-        <div className="empty">This station has no vehicles on OyoEye yet.</div>
+        <div className="empty">This station has no vehicles on Tell Seyi yet.</div>
       ) : (
         <div className="table-wrap">
           <table className="table">

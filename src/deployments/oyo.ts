@@ -449,7 +449,7 @@ if (tunji) tunji.invitedBy = people.find((p) => p.role === 'chairman' && p.lgaId
 export const OYO: Deployment = {
   organisations: ORGANISATIONS,
   id: 'oyo',
-  product: 'OyoEye',
+  product: 'Tell Seyi',
   state: 'Oyo',
   prefix: 'OY',
   emergencyLine: '615',

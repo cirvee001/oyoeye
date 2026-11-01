@@ -157,7 +157,7 @@ export interface Person {
   verified?: boolean;
   /** Commander set "Lone duty": every job counts as alone. */
   loneDuty?: boolean;
-  /** v2.4: OyoEye Rule Book. */
+  /** v2.4: Tell Seyi Rule Book. */
   rulebookAcceptedVersion?: number;
   rulebookAcceptedAt?: number;
   /** Last Rule Book version whose "what's new" notice was shown. */
@@ -189,7 +189,7 @@ export type SlaTable = Record<CategoryId, Record<Severity, SlaWindow>>;
 export interface Deployment {
   organisations: Organisation[];
   id: string;
-  product: string; // OyoEye
+  product: string; // Tell Seyi
   state: string; // Oyo
   prefix: string; // OY
   emergencyLine: string; // 615
