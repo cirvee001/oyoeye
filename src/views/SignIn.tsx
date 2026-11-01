@@ -111,6 +111,7 @@ export function SignIn() {
   return (
     <div className="auth">
       <section className="auth-brand">
+        <img className="ab-bg" src="/images/hero-emergency-lights.jpg" alt={t("si.photo.alt")} />
         <div className="ab-top">
           <Logo size={44} inverse />
           <div>
@@ -119,37 +120,15 @@ export function SignIn() {
           </div>
         </div>
 
-        <figure className="ab-photo">
-          <img src="/images/hero-emergency-lights.jpg" alt={t("si.photo.alt")} />
-          <figcaption>Photo: Scott Rodgerson / Unsplash</figcaption>
-        </figure>
-
-        <h1 className="ab-headline">
-          <span>{t("si.headline1")}</span> <span className="ab-accent">{t("si.headline2")}</span>
-        </h1>
-
-        <div className="ab-actions">
+        <div className="ab-bottom">
+          <h1 className="ab-headline">
+            <span>{t("si.headline1")}</span> <span className="ab-accent">{t("si.headline2")}</span>
+          </h1>
           <button className="btn sos-cta xl block" onClick={() => go("/emergency")}>
             <Icon name="sos" size={24} /> {t("si.sos")}
           </button>
-          <a className="ab-link" href="#/report">
-            {t("si.anon")}
-          </a>
         </div>
-        <div className="ab-foot">
-          <a href="#/rules">
-            <Icon name="file" size={16} /> {t("nav.rules")}
-          </a>
-          <a href="#/track">
-            <Icon name="list" size={16} /> {t("home.track")}
-          </a>
-          <a href="#/public">
-            <Icon name="reports" size={16} /> {t("si.public")}
-          </a>
-          <a href="#/ussd">
-            <Icon name="phone" size={16} /> {t("si.ussd")}
-          </a>
-        </div>
+        {/* <span className="ab-credit">Photo: Scott Rodgerson / Unsplash</span> */}
       </section>
 
       <section className="auth-form">
@@ -334,6 +313,22 @@ export function SignIn() {
               </>
             )}
           </div>
+
+          <nav className="af-links" aria-label="More ways to use Tell Seyi">
+            <a href="#/report">{t("si.anon")}</a>
+            <a href="#/track">
+              <Icon name="list" size={16} /> {t("home.track")}
+            </a>
+            <a href="#/ussd">
+              <Icon name="phone" size={16} /> {t("si.ussd")}
+            </a>
+            <a href="#/rules">
+              <Icon name="file" size={16} /> {t("nav.rules")}
+            </a>
+            <a href="#/public">
+              <Icon name="reports" size={16} /> {t("si.public")}
+            </a>
+          </nav>
 
           <div className="af-demo">
             <h3>Demo accounts</h3>

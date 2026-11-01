@@ -315,6 +315,7 @@ export const STRINGS = {
   'si.state': ['Oyo State', 'Ìpínlẹ̀ Ọ̀yọ́'],
   'si.headline1': ['See it.', 'Rí i.'],
   'si.headline2': ['Tell Seyi.', 'Sọ fún Seyi.'],
+  'si.lede.short': ['Report danger in your area. The 615 control room sends help — free, and anonymous if you prefer.', 'Ròyìn ewu ní agbègbè yín. Yàrá ìṣàkóso 615 máa rán ìrànlọ́wọ́ — ọ̀fẹ́ ni, ẹ sì lè ṣe é láìsí orúkọ.'],
   'si.lede': ['Report danger or a problem in your area. The 615 control room checks it and sends the right unit — and you can follow every step.', 'Ròyìn ewu tàbí ìṣòro ní agbègbè yín. Yàrá ìṣàkóso 615 máa ṣàyẹ̀wò rẹ̀, á sì rán ẹ̀ka tó yẹ — ẹ ó sì lè tẹ̀lé gbogbo ìgbésẹ̀.'],
   'si.trust.free': ['Help is free — never pay', 'Ìrànlọ́wọ́ jẹ́ ọ̀fẹ́ — ẹ má sanwó'],
   'si.trust.anon': ['Report anonymously if you prefer', 'Ẹ lè ròyìn láìsí orúkọ'],

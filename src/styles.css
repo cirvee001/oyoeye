@@ -3761,46 +3761,53 @@ a.statcard:hover .sc-view { text-decoration: underline; }
 @media (max-width: 768px) {
   .bar { grid-template-columns: minmax(90px, 130px) 1fr 36px; gap: 8px; }
 }
-
-/* ---------- Sign-in banner (Tell Seyi): picture first, few words ---------- */
+/* ---------- Sign-in hero: one full-bleed photo; logo on top, a few words and the emergency button at the bottom ---------- */
+/* Photo: patrol light bar at night (Scott Rodgerson, Unsplash License). A dark fade at the bottom keeps the words readable. */
 .auth-brand {
   position: sticky;
   top: 0;
-  overflow: hidden;
-  justify-content: flex-start;
-  gap: 18px;
-  padding: 36px 48px 28px;
   height: 100vh;
   min-height: 0;
-  background:
-    radial-gradient(700px 420px at 75% 20%, rgba(166, 244, 197, 0.12), transparent 60%),
-    linear-gradient(180deg, #0a6248 0%, #0b6e4f 45%, #075c41 100%);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 36px 52px 32px;
+  background: #050a12;
+  color: #fff;
 }
+.ab-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; z-index: 0; }
+.auth-brand::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(180deg, rgba(3, 8, 14, 0.6) 0%, rgba(3, 8, 14, 0) 22%, rgba(3, 8, 14, 0) 42%, rgba(3, 24, 18, 0.78) 66%, #032a1f 100%);
+}
+.auth-brand::after { content: none; }
+.auth-brand > *:not(.ab-bg) { position: relative; z-index: 1; }
 .ab-top { display: flex; align-items: center; gap: 12px; }
 .ab-name { display: block; font-size: 22px; font-weight: 800; letter-spacing: -0.01em; color: #fff; }
-.ab-top small { color: #c7ead9; font-size: 13px; }
-/* the picture takes all the room that is left, and shrinks before anything else does */
-.ab-art { flex: 1 1 0; min-height: 160px; width: calc(100% + 96px); margin: 0 -48px; height: auto; display: block; }
-.ab-headline { margin: 0; font-size: clamp(36px, 3.6vw, 54px); line-height: 1.02; font-weight: 800; letter-spacing: -0.03em; color: #fff; }
-.ab-accent { color: #a6f4c5; }
+.ab-top small { color: rgba(255, 255, 255, 0.78); font-size: 13px; }
+.ab-bottom { display: grid; gap: 18px; max-width: 520px; }
+.ab-headline { margin: 0; font-size: clamp(40px, 4vw, 60px); line-height: 1; font-weight: 800; letter-spacing: -0.03em; color: #fff; }
+.ab-accent { color: #6ce9a6; }
+.ab-lede { margin: -4px 0 4px; font-size: 16px; line-height: 1.5; color: rgba(255, 255, 255, 0.86); max-width: 440px; }
 .ab-actions { display: grid; gap: 10px; max-width: 460px; }
-.ab-foot { margin-top: 2px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.16); gap: 4px 18px; }
+.ab-link { color: #fff; font-weight: 600; }
+.ab-foot { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 4px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.16); }
+.ab-foot a { color: rgba(255, 255, 255, 0.88); }
+.ab-credit { position: absolute !important; right: 14px; top: 14px; font-size: 11px; color: rgba(255, 255, 255, 0.55); }
 @media (max-width: 900px) {
-  .auth-brand { position: static; height: auto; padding: 24px 20px 20px; gap: 14px; }
-  /* phones: the whole picture at its natural shape, so the shield at the top is never cropped */
-  .ab-art { flex: none; width: calc(100% + 40px); margin: 0 -20px; height: auto; aspect-ratio: 600 / 420; min-height: 0; }
-  .ab-headline { font-size: 34px; }
+  .auth-brand { position: relative; height: auto; min-height: 560px; padding: 24px 20px 24px; }
+  .ab-headline { font-size: 38px; }
 }
 
-/* Sign-in hero photo: patrol light bar at night (Scott Rodgerson, Unsplash License). Kept in its own
-   red and blue (security, response); only the edges fade into the brand green so the words stay readable. */
-.ab-photo { position: relative; flex: 1 1 0; min-height: 180px; margin: 0 -48px; overflow: hidden; background: #050a12; }
-.ab-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 55%; }
-.ab-photo::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, #0a6248 0%, rgba(10, 98, 72, 0) 22%, rgba(10, 98, 72, 0) 70%, #0b6e4f 100%); }
-.ab-photo figcaption { position: absolute; right: 14px; bottom: 10px; z-index: 1; font-size: 11px; color: rgba(255, 255, 255, 0.75); }
-@media (max-width: 900px) {
-  .ab-photo { flex: none; margin: 0 -20px; aspect-ratio: 16 / 10; min-height: 0; }
-}
+/* links moved off the photo, under the sign-in form */
+.af-links { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 14px 0 4px; border-top: 1px solid var(--line); font-size: 14px; }
+.af-links a { display: inline-flex; align-items: center; gap: 6px; color: var(--primary); font-weight: 600; min-height: 36px; }
+.af-links a:first-child { flex-basis: 100%; }
 
 /* Reporter score badge and meter: green 8–10, amber 5–7.9, red below 5 */
 .score-badge { display: inline-flex; align-items: center; gap: 4px; border-radius: 99px; padding: 4px 11px 4px 9px; font-size: 13px; font-weight: 700; line-height: 1; white-space: nowrap; }
