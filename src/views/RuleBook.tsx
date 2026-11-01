@@ -189,7 +189,21 @@ export function StandingBadge() {
   const s = useStore((x) => x);
   const sd = standingFor(s, { personId: me.id });
   if (!sd) return null;
-  return <span className={`standing s-${sd.level}`}>{levelLabel(sd, t)}</span>;
+  return <ScoreBadge sd={sd} label={levelLabel(sd, t)} />;
+}
+
+/** The reporter score as a badge: number out of 10, coloured by band (green 8–10, amber 5–7.9, red below 5). */
+export function ScoreBadge({ sd, label, size = 'md' }: { sd: Standing; label?: string; size?: 'md' | 'lg' }) {
+  return (
+    <span className={`score-badge b-${sd.band} sz-${size}`} title={`Reporter score ${sd.score.toFixed(1)} out of 10${label ? ` · ${label}` : ''}`}>
+      <svg width="14" height="14" viewBox="0 0 64 64" aria-hidden="true">
+        <path d="M32 4 54 12v17c0 15-9.5 25.5-22 31C19.5 54.5 10 44 10 29V12z" fill="currentColor" />
+      </svg>
+      <b>{sd.score.toFixed(1)}</b>
+      <small>/10</small>
+      {label && <span className="sb-label">{label}</span>}
+    </span>
+  );
 }
 
 /** Reporter standing card: transparent, with how long it lasts and an Appeal button (§3.5). */
@@ -203,9 +217,21 @@ export function StandingCard() {
   const pending = s.complaints.find((c) => c.kind === 'appeal' && c.complainant.personId === me.id && c.status !== 'closed');
   const bad = sd.level === 'review' || sd.level === 'restricted';
   return (
-    <Card title={t('sd.title')} right={<span className={`standing s-${sd.level}`}>{levelLabel(sd, t)}</span>}>
+    <Card title={t('sd.title')} right={<ScoreBadge sd={sd} label={levelLabel(sd, t)} />}>
       <div className="stack">
+        <div className={`score-meter b-${sd.band}`} aria-label={`${t('sd.score')}: ${sd.score.toFixed(1)} ${t('sd.outof')}`}>
+          <div className="sm-num">
+            <b>{sd.score.toFixed(1)}</b>
+            <span>{t('sd.outof')}</span>
+          </div>
+          <div className="sm-track" aria-hidden="true">
+            <div className="sm-fill" style={{ width: `${sd.score * 10}%` }} />
+            <i style={{ left: '50%' }} />
+            <i style={{ left: '80%' }} />
+          </div>
+        </div>
         <p className="small">{STANDING_TEXT(sd, t)}</p>
+        <p className="tiny muted">{t('sd.rule')}</p>
         {bad && (
           <>
             <ul className="plainlist small">

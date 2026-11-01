@@ -374,6 +374,10 @@ export const STRINGS = {
   'rb.dismiss': ['Dismiss', 'Pa á tì'],
   // standing
   'sd.title': ['Reporter standing', 'Ipò oníròyìn'],
+  // DRAFT — needs native-speaker review (reporter score)
+  'sd.score': ['Reporter score', 'Àmì oníròyìn'],
+  'sd.outof': ['out of 10', 'nínú 10'],
+  'sd.rule': ['Everyone starts at 10. A deliberate false alarm takes off 3 points; each genuine report confirmed after that gives 0.5 back. Honest mistakes never count.', 'Gbogbo ènìyàn ló ń bẹ̀rẹ̀ láti 10. Ìròyìn èké tí a mọ̀ọ́mọ̀ ṣe máa yọ àmì mẹ́ta kúrò; ìròyìn òtítọ́ kọ̀ọ̀kan tí a fìdí rẹ̀ múlẹ̀ lẹ́yìn náà máa dá 0.5 padà. Àṣìṣe òtítọ́ kò ní kà.'],
   'sd.lvl.new': ['New', 'Tuntun'],
   'sd.lvl.trusted': ['Trusted', 'A gbẹ́kẹ̀lé'],
   'sd.lvl.good': ['Good', 'Dára'],

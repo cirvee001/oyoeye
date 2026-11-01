@@ -8,8 +8,11 @@ import {
   focalSignIn,
   signIn,
   staffSignIn,
+  standingFor,
+  useStore,
   validPhone,
 } from "../store";
+import { ScoreBadge } from "./RuleBook";
 import { Logo } from "../App";
 import { initials, roleName } from "../roles";
 import { Icon, go, run } from "../ui";
@@ -20,7 +23,7 @@ import { unlockAudio } from "../sound";
 
 /** Demo accounts, grouped the way officials think about them. */
 export const DEMO_GROUPS: { label: string; ids: string[] }[] = [
-  { label: "Citizens", ids: ["cit1"] },
+  { label: "Citizens", ids: ["cit1", "cit-bose"] },
   { label: "Community", ids: ["f-lasisi", "f-alake"] },
   { label: "Control room", ids: ["disp1", "duty1"] },
   {
@@ -34,6 +37,7 @@ export const DEMO_IDS = DEMO_GROUPS.flatMap((g) => g.ids);
 export const DEMO_OTP = "123456";
 
 export function DemoCards({ onPick }: { onPick: (id: string) => void }) {
+  const state = useStore((x) => x);
   return (
     <div className="demo-list">
       {DEMO_GROUPS.map((g) => (
@@ -53,6 +57,10 @@ export function DemoCards({ onPick }: { onPick: (id: string) => void }) {
                       : `${p.staffId}${agency(p.agencyId) ? ` · ${agency(p.agencyId)!.short}` : ""}`}
                   </small>
                 </span>
+                {p.role === "citizen" && (() => {
+                  const sd = standingFor(state, { personId: p.id });
+                  return sd ? <ScoreBadge sd={sd} /> : null;
+                })()}
                 <span className="dl-go">Sign in →</span>
               </button>
             );

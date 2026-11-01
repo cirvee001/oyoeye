@@ -2392,12 +2392,21 @@ export const STANDING_LABEL: Record<StandingLevel, string> = { new: 'New', trust
 export interface Standing {
   level: StandingLevel;
   label: string;
+  /** Reporter score out of 10 (one decimal): starts at 10, −3 per confirmed hoax in 12 months, +0.5 back per confirmed genuine report since the last hoax. */
+  score: number;
+  /** Colour band of the score: good 8–10, review 5–7.9, low below 5. */
+  band: 'good' | 'review' | 'low';
   hoaxes: Incident[];
   closed: number;
   confirmed: number;
   /** Under review / Restricted last until 12 months after the last hoax. */
   until?: number;
 }
+
+export const SCORE_START = 10;
+export const SCORE_HOAX = 3;
+export const SCORE_RECOVER = 0.5;
+export const scoreBand = (score: number): Standing['band'] => (score >= 8 ? 'good' : score >= 5 ? 'review' : 'low');
 
 /**
  * Reporter standing. Attaches to the account, or to the phone number when there is
@@ -2413,14 +2422,19 @@ export function standingFor(s: State, key: { personId?: string; phone?: string }
   const hoaxes = rows.filter((i) => i.hoax?.confirmedAt && !i.hoax.overturnedAt && i.hoax.confirmedAt > at - YEAR);
   const closedRows = rows.filter((i) => i.status === 'closed' || i.status === 'referred');
   const confirmed = closedRows.filter((i) => i.verification !== 'timeout' && i.verification !== 'no').length;
+  const last = Math.max(0, ...hoaxes.map((i) => i.hoax!.confirmedAt!));
+  // Score: honest reporting after a hoax earns points back, so people can recover.
+  const recovered = hoaxes.length ? closedRows.filter((i) => (i.t.closed ?? 0) > last && i.verification !== 'timeout' && i.verification !== 'no').length : 0;
+  const score = Math.round(Math.max(0, Math.min(SCORE_START, SCORE_START - SCORE_HOAX * hoaxes.length + SCORE_RECOVER * recovered)) * 10) / 10;
+  const band = scoreBand(score);
+  // The level follows the score band; inside the good band it still says New / Trusted / Good.
   let level: StandingLevel;
-  if (hoaxes.length >= 2) level = 'restricted';
-  else if (hoaxes.length === 1) level = 'review';
+  if (band === 'low') level = 'restricted';
+  else if (band === 'review') level = 'review';
   else if (closedRows.length < 2) level = 'new';
   else if (confirmed >= 2) level = 'trusted';
   else level = 'good';
-  const last = Math.max(0, ...hoaxes.map((i) => i.hoax!.confirmedAt!));
-  return { level, label: STANDING_LABEL[level], hoaxes, closed: closedRows.length, confirmed, until: hoaxes.length ? last + YEAR : undefined };
+  return { level, label: STANDING_LABEL[level], score, band, hoaxes, closed: closedRows.length, confirmed, until: hoaxes.length ? last + YEAR : undefined };
 }
 export const standingOfReport = (s: State, i: Incident) => {
   const r = i.reports[0];
