@@ -320,6 +320,7 @@ export const STRINGS = {
   'si.trust.anon': ['Report anonymously if you prefer', 'Ẹ lè ròyìn láìsí orúkọ'],
   'si.trust.615': ['Answered by the 615 control room', 'Yàrá ìṣàkóso 615 ló ń dáhùn'],
   'si.art': ['Reports from across Oyo reach the 615 control room, which sends the nearest unit.', 'Ìròyìn láti gbogbo Ọ̀yọ́ ń dé yàrá ìṣàkóso 615, tó ń rán ẹ̀ka tó súnmọ́ jùlọ.'],
+  'si.photo.alt': ['Emergency lights of a patrol vehicle at night', 'Iná pàjáwìrì ọkọ̀ ọlọ́pàá ní alẹ́'],
   'si.art.center': ['615 CONTROL ROOM', 'YÀRÁ ÌṢÀKÓSO 615'],
   'si.sos': ['Report an emergency now — no sign-in', 'Ròyìn pàjáwìrì báyìí — láìwọlé'],
   'si.anon': ['Report a problem anonymously →', 'Ròyìn ìṣòro láìsí orúkọ →'],

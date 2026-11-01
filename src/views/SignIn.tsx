@@ -111,7 +111,10 @@ export function SignIn() {
           </div>
         </div>
 
-        <HeroArt label={t("si.art")} />
+        <figure className="ab-photo">
+          <img src="/images/hero-emergency-lights.jpg" alt={t("si.photo.alt")} />
+          <figcaption>Photo: Scott Rodgerson / Unsplash</figcaption>
+        </figure>
 
         <h1 className="ab-headline">
           <span>{t("si.headline1")}</span> <span className="ab-accent">{t("si.headline2")}</span>
@@ -335,115 +338,5 @@ export function SignIn() {
         </div>
       </section>
     </div>
-  );
-}
-
-/**
- * Sign-in hero: Ibadan at dusk (rusty rooftops of the old city, Mapo Hall on its hill, Cocoa House).
- * A resident raises a phone; the signal reaches the Tell Seyi shield; a patrol car responds below.
- * Stylised landmarks, not survey drawings. Decorative, so it is described once for screen readers.
- */
-function HeroArt({ label }: { label: string }) {
-  // rusty-roofed houses of the old city: [x, width, wall height]
-  const houses: [number, number, number][] = [
-    [0, 64, 34], [58, 52, 28], [104, 70, 40], [168, 48, 26], [210, 66, 36], [270, 54, 30],
-    [318, 72, 42], [384, 50, 28], [428, 68, 38], [490, 56, 30], [540, 64, 36],
-  ];
-  const stars: [number, number][] = [[40, 40], [120, 22], [210, 58], [300, 18], [520, 30], [565, 84], [80, 110], [250, 120]];
-  return (
-    <svg className="ab-art" viewBox="0 0 600 420" preserveAspectRatio="xMidYMax slice" role="img" aria-label={label}>
-      <defs>
-        <radialGradient id="ab-glow" cx="50%" cy="50%" r="50%">
-          <stop offset="0" stopColor="#A6F4C5" stopOpacity="0.45" />
-          <stop offset="1" stopColor="#A6F4C5" stopOpacity="0" />
-        </radialGradient>
-        <linearGradient id="ab-wall" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stopColor="#F2E6D3" />
-          <stop offset="1" stopColor="#D9C6A8" />
-        </linearGradient>
-      </defs>
-
-      {stars.map(([x, y], k) => (
-        <circle key={k} cx={x} cy={y} r={k % 3 ? 1.4 : 2} fill="#FFFFFF" opacity="0.45" />
-      ))}
-
-      {/* signal from the phone to the shield */}
-      <path d="M186 268 C230 160 330 112 410 104" fill="none" stroke="#A6F4C5" strokeWidth="2.5" strokeDasharray="6 7" strokeLinecap="round" />
-      <circle cx="430" cy="96" r="78" fill="url(#ab-glow)" />
-      <g fill="none" stroke="#FFFFFF" strokeOpacity="0.22">
-        <circle cx="430" cy="96" r="52" />
-        <circle cx="430" cy="96" r="70" />
-      </g>
-      <g transform="translate(398 58)">
-        <path d="M32 4 54 12v17c0 15-9.5 25.5-22 31C19.5 54.5 10 44 10 29V12z" fill="#FFFFFF" />
-        <path d="M23 19h18a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4h-8l-6 5v-5h-4a4 4 0 0 1-4-4V23a4 4 0 0 1 4-4z" fill="#0B6E4F" />
-        <circle cx="26.5" cy="28" r="2" fill="#FFFFFF" />
-        <circle cx="32" cy="28" r="2" fill="#FFFFFF" />
-        <circle cx="37.5" cy="28" r="2" fill="#FFFFFF" />
-      </g>
-
-      {/* back skyline: Cocoa House and towers */}
-      <g fill="#064432">
-        <rect x="474" y="150" width="46" height="200" />
-        <rect x="480" y="138" width="34" height="14" />
-        <rect x="494" y="116" width="6" height="24" />
-        <rect x="430" y="214" width="36" height="136" />
-        <rect x="532" y="196" width="40" height="154" />
-        <rect x="18" y="230" width="44" height="120" />
-        <rect x="380" y="236" width="40" height="114" />
-      </g>
-      <g fill="#A6F4C5" opacity="0.35">
-        {[0, 1, 2, 3, 4, 5, 6, 7].map((r) => (
-          <rect key={r} x="482" y={162 + r * 22} width="30" height="5" rx="1" />
-        ))}
-      </g>
-
-      {/* Mapo Hall on its hill */}
-      <path d="M180 352 C220 262 340 262 380 352z" fill="#075c41" />
-      <g fill="#E9DCC6">
-        <rect x="232" y="248" width="96" height="10" />
-        <path d="M226 248 280 226 334 248z" />
-        {[0, 1, 2, 3, 4, 5].map((c) => (
-          <rect key={c} x={238 + c * 16} y="258" width="6" height="34" />
-        ))}
-        <rect x="230" y="292" width="100" height="8" />
-      </g>
-
-      {/* rusty rooftops of the old city */}
-      {houses.map(([x, w, h], k) => (
-        <g key={k}>
-          <rect x={x} y={392 - h} width={w} height={h} fill="url(#ab-wall)" />
-          <path d={`M${x - 4} ${392 - h} L${x + w / 2} ${392 - h - 18} L${x + w + 4} ${392 - h}z`} fill={k % 2 ? '#B54708' : '#C4621C'} />
-          <rect x={x + w / 2 - 6} y={392 - h + 10} width="12" height="12" fill="#5C3A1E" opacity="0.55" />
-        </g>
-      ))}
-      <rect x="0" y="392" width="600" height="28" fill="#053325" />
-      <path d="M0 404 H600" stroke="#FFFFFF" strokeOpacity="0.25" strokeWidth="2" strokeDasharray="18 14" />
-
-      {/* patrol car responding */}
-      <g transform="translate(440 382)">
-        <rect x="0" y="0" width="70" height="20" rx="6" fill="#FFFFFF" />
-        <path d="M14 0 L22 -12 H48 L56 0z" fill="#FFFFFF" />
-        <rect x="24" y="-10" width="9" height="8" rx="1.5" fill="#16202E" />
-        <rect x="37" y="-10" width="9" height="8" rx="1.5" fill="#16202E" />
-        <rect x="27" y="-17" width="8" height="5" rx="1.5" fill="#F04438" />
-        <rect x="35" y="-17" width="8" height="5" rx="1.5" fill="#2E90FA" />
-        <rect x="4" y="8" width="62" height="4" fill="#0B6E4F" />
-        <circle cx="16" cy="20" r="6" fill="#101828" />
-        <circle cx="54" cy="20" r="6" fill="#101828" />
-      </g>
-
-      {/* resident raising a phone */}
-      <g transform="translate(150 262)">
-        <ellipse cx="22" cy="128" rx="26" ry="5" fill="#000000" opacity="0.25" />
-        <path d="M8 128 L12 78 H32 L36 128 H27 L22 92 L17 128z" fill="#101828" />
-        <path d="M6 82 Q8 52 22 50 Q36 52 38 82z" fill="#1D4ED8" />
-        <path d="M33 58 Q42 40 38 16" fill="none" stroke="#7A4A2B" strokeWidth="8" strokeLinecap="round" />
-        <circle cx="22" cy="38" r="11" fill="#7A4A2B" />
-        <path d="M11 35 Q22 20 33 35 Q28 29 22 29 Q16 29 11 35z" fill="#101828" />
-        <rect x="31" y="0" width="14" height="22" rx="3" fill="#101828" />
-        <rect x="33" y="3" width="10" height="15" rx="1.5" fill="#A6F4C5" />
-      </g>
-    </svg>
   );
 }
