@@ -252,6 +252,10 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
           const c = map.getCenter();
           saveMapView(pageKey, { lat: Math.round(c.lat * 1e5) / 1e5, lng: Math.round(c.lng * 1e5) / 1e5, zoom: map.getZoom() });
         });
+      // The user closing a popup (×, Esc, empty map) forgets it; a redraw closing it does not.
+      map.on('popupclose', () => {
+        if (!redrawing.current) openPopup.current = null;
+      });
       // Buttons inside popups (vehicle status, close checkpoint).
       map.on('popupopen', (e: Leaflet.PopupEvent) => {
         const root = e.popup.getElement();
@@ -307,6 +311,9 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
     startTileWatch();
   };
   const tilesToken = useRef(0);
+  /** Key of the popup the user has open (e.g. "case:i12"); kept across redraws. */
+  const openPopup = useRef<string | null>(null);
+  const redrawing = useRef(false);
   const setTiles = async () => {
     const token = ++tilesToken.current;
     const local = await localMapAvailable();
@@ -355,7 +362,15 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
     const m = mapRef.current;
     if (!m) return;
     const { L, group, map } = m;
+    // Clearing the layers closes any open popup; remember it and reopen it after the redraw (below).
+    redrawing.current = true;
     group.clearLayers();
+    redrawing.current = false;
+    const withPopup: Record<string, Leaflet.Marker> = {};
+    const remember = (key: string, mk: Leaflet.Marker) => {
+      withPopup[key] = mk;
+      return mk.on('click', () => (openPopup.current = key));
+    };
     const icon = (html: string, px: number, cls = 'mk') => L.divIcon({ className: cls, html, iconSize: [px, px], iconAnchor: [px / 2, px / 2] });
     for (const c of data.cov.circles) {
       const sid = c.id.split('-').slice(1, -1).join('-');
@@ -368,21 +383,19 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
     }
     for (const h of data.hot) L.circle([h.lat, h.lng], { radius: h.radius, color: '#D92D20', weight: 0, fillOpacity: 0.18 }).bindTooltip(esc(h.label)).addTo(group);
     for (const b of data.bubbles) L.marker([b.lat, b.lng], { icon: L.divIcon({ className: 'count-bubble', html: String(b.n), iconSize: [30, 30] }), keyboard: false }).bindTooltip(esc(b.label)).addTo(group);
-    for (const h of data.hospitals) L.marker([h.lat, h.lng], { icon: icon(hospitalHtml, 18, 'mk mk-place'), keyboard: false, title: h.name }).bindPopup(`<div class="mp"><b>${esc(h.name)}</b><div class="tiny">Reference point · ${esc(lgaOf(h.lgaId).name)}</div></div>`).addTo(group);
+    for (const h of data.hospitals) remember(`hospital:${h.id}`, L.marker([h.lat, h.lng], { icon: icon(hospitalHtml, 18, 'mk mk-place'), keyboard: false, title: h.name }).bindPopup(`<div class="mp"><b>${esc(h.name)}</b><div class="tiny">Reference point · ${esc(lgaOf(h.lgaId).name)}</div></div>`)).addTo(group);
     for (const st of data.stations) {
       const vchips = st.vehicles?.chips.map((c) => `<span class="vchip" style="--c:${VEHICLE_STATUS_COLOR[c.status]}" title="${VEHICLE_STATUS_LABEL[c.status]}">${esc(c.callSign)}</span>`).join('') ?? '';
       const link = me.role === 'admin' || kind === 'coord' ? `<a href="#/admin/station/${st.id}">View station</a>` : me.agencyId === st.id && isManagerOf(me, st.id) ? `<a href="#/officers?tab=vehicles">My officers</a>` : '';
       const popup = `<div class="mp mp-station"><b>${esc(st.name)}</b>${st.live ? '' : ' <span class="tiny">(setting up)</span>'}<div class="tiny">Readiness ${st.readiness}/4 · Commander: ${esc(st.commander ?? '—')}</div><div>Officers on duty: <b>${st.onDuty}/${st.officers}</b></div>${st.vehicles ? `<div>Vehicles available: <b>${st.vehicles.available}/${st.vehicles.total}</b></div><div class="vchips">${vchips}</div>` : ''}<div>Open cases: ${st.openCases}</div>${link}</div>`;
-      L.marker([st.lat, st.lng], { icon: L.divIcon({ className: `mk${dim(`station:${st.id}`)}`, html: stationHtml(st.letter, st.color, st.warning), iconSize: [26, 30], iconAnchor: [13, 26] }), keyboard: false, title: st.short })
-        .bindPopup(popup)
+      remember(`station:${st.id}`, L.marker([st.lat, st.lng], { icon: L.divIcon({ className: `mk${dim(`station:${st.id}`)}`, html: stationHtml(st.letter, st.color, st.warning), iconSize: [26, 30], iconAnchor: [13, 26] }), keyboard: false, title: st.short }).bindPopup(popup))
         .on('click', () => setSel({ kind: 'station', id: st.id }))
         .addTo(group);
     }
     for (const cp of data.checkpoints) {
       const mayClose = (canAddCheckpoint && (me.agencyId === cp.stationId || me.role === 'ops_manager')) && cp.state !== 'closed';
       const popup = `<div class="mp mp-cp"><b>${esc(cp.name)}</b><div class="tiny">${esc(cp.road)} · ${cp.kind} · ${esc(cp.station)}</div><div>${cp.state === 'scheduled' ? 'Starts' : 'Active since'} ${fmtTimeWat(cp.activeFrom)}${cp.activeTo ? ` · until ${fmtTimeWat(cp.activeTo)}` : ''}</div><div>On post: ${cp.staff.length ? cp.staff.map((p) => `${esc(p.rank ?? '')} ${esc(p.name)}`).join(', ') : '—'}</div><div>Cases within 1 km in the last 7 days: <b>${cp.casesNearby}</b></div>${mayClose ? `<button class="btn sm" data-act="cpclose" data-id="${cp.id}">Close checkpoint</button>` : ''}</div>`;
-      L.marker([cp.lat, cp.lng], { icon: icon(checkpointHtml(cp.kind, cp.state), 18, `mk mk-cpwrap${dim(`checkpoint:${cp.id}`)}`), keyboard: false, title: cp.name })
-        .bindPopup(popup)
+      remember(`checkpoint:${cp.id}`, L.marker([cp.lat, cp.lng], { icon: icon(checkpointHtml(cp.kind, cp.state), 18, `mk mk-cpwrap${dim(`checkpoint:${cp.id}`)}`), keyboard: false, title: cp.name }).bindPopup(popup))
         .on('click', () => setSel({ kind: 'checkpoint', id: cp.id }))
         .addTo(group);
     }
@@ -401,8 +414,7 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
       const popup = `<div class="mp"><b class="mono">${esc(p.ref)}</b><div>${esc(p.type)}</div><span class="pill ${p.tone}">${esc(p.status)}</span><div class="mp-holder">With: ${esc(p.holder)}</div><a href="#/case/${p.caseId}">View case</a></div>`;
       const px = SIZE_PX(p.r);
       const extra = p.pulse ? ' mk-pulse' : '';
-      L.marker([p.lat, p.lng], { icon: icon(pinHtml(p.shape, p.color, px), px + 6, `mk${extra}${dim(`case:${p.caseId}`)}`), alt: p.kind === 'restricted' ? 'Restricted case' : `${p.ref} ${p.status}`, zIndexOffset: p.kind === 'sos' ? Z.sos : Z.incident })
-        .bindPopup(popup)
+      remember(`case:${p.caseId}`, L.marker([p.lat, p.lng], { icon: icon(pinHtml(p.shape, p.color, px), px + 6, `mk${extra}${dim(`case:${p.caseId}`)}`), alt: p.kind === 'restricted' ? 'Restricted case' : `${p.ref} ${p.status}`, zIndexOffset: p.kind === 'sos' ? Z.sos : Z.incident }).bindPopup(popup))
         .bindTooltip(pinTip(p, at), { direction: 'top', offset: [0, -px / 2 - 4], className: 'mp-tip', opacity: 1 })
         .on('click', () => setSel({ kind: 'case', id: p.caseId }))
         .addTo(group);
@@ -426,8 +438,7 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
             : ''
         : '';
       const popup = `<div class="mp mp-veh"><b>${esc(v.callSign)}</b> <span class="tiny">${VEHICLE_KIND_LABEL[v.kind]} · ${esc(v.station)}</span><div><span class="vstatus" style="--c:${v.color}">${VEHICLE_STATUS_LABEL[v.status]}${v.statusReason ? ` — ${esc(v.statusReason)}` : ''}</span></div>${v.caseRef ? `<div>Case <a href="#/case/${v.caseId}">${esc(v.caseRef)}</a>${v.etaMin != null ? ` · ETA ${v.etaMin} min` : ''}</div>` : ''}${v.route ? `<div class="tiny">Route: ${esc(v.route)} (approximate)</div>` : ''}<div class="tiny">Crew: ${v.crew.length ? v.crew.map((c) => `${esc(c.rank ?? '')} ${esc(c.name)}`).join(', ') : 'none'}</div>${passLink}${actions}</div>`;
-      L.marker([v.lat, v.lng], { icon: icon(vehicleMarkerHtml({ call: v.callSign, kind: v.kind, livery: liveryFor(agency(v.stationId)?.kind), statusColor: v.color, heading: v.heading, flash: v.status === 'responding', esc }), 52, `mk mk-vwrap${v.status === 'out_of_service' ? ' oos' : ''}${dim(`vehicle:${v.id}`)}${sel?.id === v.id ? ' selected' : ''}`), keyboard: false, title: `${v.callSign} — ${VEHICLE_STATUS_LABEL[v.status]}`, zIndexOffset: Z.vehicle })
-        .bindPopup(popup)
+      remember(`vehicle:${v.id}`, L.marker([v.lat, v.lng], { icon: icon(vehicleMarkerHtml({ call: v.callSign, kind: v.kind, livery: liveryFor(agency(v.stationId)?.kind), statusColor: v.color, heading: v.heading, flash: v.status === 'responding', esc }), 52, `mk mk-vwrap${v.status === 'out_of_service' ? ' oos' : ''}${dim(`vehicle:${v.id}`)}${sel?.id === v.id ? ' selected' : ''}`), keyboard: false, title: `${v.callSign} — ${VEHICLE_STATUS_LABEL[v.status]}`, zIndexOffset: Z.vehicle }).bindPopup(popup))
         .on('click', () => setSel({ kind: 'vehicle', id: v.id }))
         .addTo(group);
     }
@@ -439,6 +450,14 @@ export function LiveMap({ rows, context, height = 460, controls = true, focus, s
         pickRef.current?.onPick(ll.lat, ll.lng);
       });
       m.pin = pin;
+    }
+    // Reopen the popup the user opened, in place (no panning), so redraws never close it.
+    const reopen = openPopup.current ? withPopup[openPopup.current] : undefined;
+    if (reopen) {
+      const pop = reopen.getPopup();
+      if (pop) pop.options.autoPan = false;
+      reopen.openPopup();
+      if (pop) pop.options.autoPan = true;
     }
   };
   useEffect(draw, [data, picker?.lat, picker?.lng, zoom, sel, trail.length, related]); // eslint-disable-line react-hooks/exhaustive-deps
